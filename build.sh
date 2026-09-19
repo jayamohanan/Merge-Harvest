@@ -40,46 +40,6 @@ rsync -a \
   --exclude 'untitled folder' \
   ./ "$OUT/"
 
-# ── LEVEL MAPS, FIVE TO A FILE ─────────────────────────────────────────────────
-# Every level map is its own .tmj in the project, which is what Tiled edits. On a
-# portal each file is a request, and each request waits on the server however
-# small the file is — fifteen maps were fifteen waits before play. So the BUILD
-# COPY packs them in RUNNING ORDER, five to a bundle: levels 1-5, 6-10, and so
-# on, matching the roster's stretches. The opening view needs only the first.
-#
-# Each bundle maps a level's FILE path to its map, whitespace stripped. The
-# bundled .tmj files are then removed from the build, and the bundle list is
-# appended to the build's levels.js as LEVEL_DATA.MAP_BUNDLES — which is how the
-# game knows to ask for bundles. The project's own files are never touched, so
-# the working folder keeps loading one map per file.
-node - "$OUT" <<'EOF'
-const fs = require('fs'), path = require('path'), vm = require('vm');
-const OUT = process.argv[2], SIZE = 5;
-const pad = (n) => String(n).padStart(2, '0');
-// levels.js is a browser script; run it in a sandbox and take LEVEL_DATA out.
-const LD = vm.runInNewContext(fs.readFileSync('levels.js', 'utf8') + '\n;LEVEL_DATA', { console });
-const levels = LD.LEVELS || [];
-const files = [], packed = new Set();
-fs.mkdirSync(path.join(OUT, 'maps/bundles'), { recursive: true });
-for (let b = 0; b * SIZE < levels.length; b++) {
-  const group = levels.slice(b * SIZE, (b + 1) * SIZE);
-  const bundle = {};
-  for (const lv of group) {
-    if (!lv.FILE || bundle[lv.FILE]) continue;
-    bundle[lv.FILE] = JSON.parse(fs.readFileSync(lv.FILE, 'utf8'));
-    packed.add(lv.FILE);
-  }
-  const name = `maps/bundles/levels_${pad(b * SIZE + 1)}-${pad(b * SIZE + group.length)}.json`;
-  fs.writeFileSync(path.join(OUT, name), JSON.stringify(bundle));
-  files.push(name);
-}
-for (const f of packed) fs.rmSync(path.join(OUT, f), { force: true });
-fs.appendFileSync(path.join(OUT, 'levels.js'),
-  `\n// Added by build.sh: level maps ship ${SIZE} to a file.\n` +
-  `LEVEL_DATA.MAP_BUNDLES = ${JSON.stringify({ SIZE, FILES: files })};\n`);
-console.log(`bundled ${packed.size} level maps into ${files.length} files`);
-EOF
-
 # ── START THE OPENING ART WITH THE PAGE ────────────────────────────────────────
 # Without this, loading runs in rounds, each waiting on the server: the page,
 # then the scripts, then — only once game.js has arrived and run — the art. The
@@ -88,13 +48,10 @@ EOF
 # alongside the scripts. When the game asks for them they are already in hand
 # or on their way.
 #
-# WHICH FILES comes from assets.js, the same functions the game loads from — run
-# here in a sandbox over the config, the level list and the opening levels'
-# maps. Nothing is listed by hand, so the hints cannot drift from what the game
-# actually loads:
-#   the shared art                    sharedAssets()
-#   levels 1..PRELOAD's art           levelArtFor(), read off each level's map
-#   the bundles holding those maps    LEVEL_DATA.MAP_BUNDLES, from the step above
+# WHICH FILES comes from assets.js, the same function the game loads from — run
+# here in a sandbox over the config. Nothing is listed by hand, so the hints
+# cannot drift from what the game actually loads. There is one list now:
+# sharedAssets() is everything, the per-level fetching having gone with the farm.
 #
 # Images are hinted as="image" with crossorigin="anonymous", matching how the
 # game loads them (plain image loads, see `loader` in game.js). JSON is hinted
@@ -105,31 +62,12 @@ node - "$OUT" <<'EOF'
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const OUT = process.argv[2];
 const ctx = vm.createContext({ console });
-// The build's levels.js, which now carries the bundle list; the rest as written.
-for (const f of ['batteryChargeData.js', 'levels.js', 'config.js', 'assets.js']) {
+for (const f of ['batteryChargeData.js', 'cropData.js', 'config.js', 'assets.js']) {
   vm.runInContext(fs.readFileSync(path.join(OUT, f), 'utf8'), ctx, { filename: f });
 }
-const pick = vm.runInContext(`(() => {
-  const out = sharedAssets().map((a) => ({ url: a.url, json: a.type === 'json' }));
-  const ls = levelList(), MB = CONFIG.ROAD.TILEMAP.MAP_BUNDLES;
-  for (let i = 0; i < preloadLevelCount(); i++) {
-    const w = i % ls.length, lv = ls[w];
-    out.push({ url: MB ? MB.FILES[Math.floor(w / MB.SIZE)] : lv.FILE, json: true });
-    out.push({ file: lv.FILE, index: i });
-  }
-  return out;
-})()`, ctx);
+const pick = vm.runInContext(`sharedAssets().map((a) => ({ url: a.url, json: a.type === 'json' }))`, ctx);
 const hints = new Map();
-for (const p of pick) {
-  if (p.file) {
-    // A level's art needs its map: read it from the project, where the .tmj
-    // still is (the build copy was folded into a bundle above).
-    const map = JSON.parse(fs.readFileSync(p.file, 'utf8'));
-    for (const a of vm.runInContext('levelArtFor', ctx)(p.index, map) || []) {
-      if (!hints.has(a.url)) hints.set(a.url, false);
-    }
-  } else if (p.url && !hints.has(p.url)) hints.set(p.url, p.json);
-}
+for (const p of pick) if (p.url && !hints.has(p.url)) hints.set(p.url, p.json);
 const tags = [...hints].map(([url, json]) => json
   ? `\t<link rel="preload" href="${url}" as="fetch" crossorigin="anonymous">`
   : `\t<link rel="preload" href="${url}" as="image" crossorigin="anonymous">`).join('\n');
@@ -148,9 +86,9 @@ EOF
 # removed. The source files are never touched.
 #
 # COMMENTS AND WHITESPACE ONLY — names are left exactly as written. These files
-# are plain scripts sharing globals: config.js defines CONFIG, levels.js defines
-# LEVEL_DATA, and game.js reads both. A minifier free to rename would shorten
-# those in one file without knowing another file depends on them, and the game
+# are plain scripts sharing globals: config.js defines CONFIG and game.js reads
+# it. A minifier free to rename would shorten those in one file without knowing
+# another file depends on them, and the game
 # would break on load. Keeping names costs a little size and removes that risk.
 #
 # phaser.min.js is left alone: it is already minified.
@@ -159,7 +97,7 @@ EOF
 # puts its whole program on a few lines, so an error's line number points nowhere
 # useful.
 if [ "$1" != "--no-minify" ]; then
-  for f in game.js config.js assets.js levels.js batteryChargeData.js; do
+  for f in game.js config.js assets.js batteryChargeData.js cropData.js; do
     [ -f "$OUT/$f" ] || continue
     npx --yes esbuild@0.24.0 "$OUT/$f" \
       --minify-whitespace --minify-syntax --legal-comments=none \
@@ -169,7 +107,7 @@ if [ "$1" != "--no-minify" ]; then
 fi
 
 # ── ONE SCRIPT INSTEAD OF FIVE ─────────────────────────────────────────────────
-# batteryChargeData.js, levels.js, config.js, assets.js and game.js are five
+# batteryChargeData.js, cropData.js, config.js, assets.js and game.js are five
 # requests before the game can even start, and each waits on the server. In the
 # BUILD COPY they are joined into one game.js, in the order index.html loads
 # them, and the build's index.html gets one tag in place of five. The project's
@@ -190,7 +128,7 @@ fi
 node - "$OUT" <<'EOF'
 const fs = require('fs'), path = require('path');
 const OUT = process.argv[2];
-const parts = ['batteryChargeData.js', 'levels.js', 'config.js', 'assets.js', 'game.js'];
+const parts = ['batteryChargeData.js', 'cropData.js', 'config.js', 'assets.js', 'game.js'];
 const htmlPath = path.join(OUT, 'index.html');
 let page = fs.readFileSync(htmlPath, 'utf8');
 // Read everything first, then write: game.js is both an input and the output.
