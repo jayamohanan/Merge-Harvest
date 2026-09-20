@@ -138,6 +138,11 @@ class GameScene extends Phaser.Scene {
         this.farmRows          = null;   // the slot/plant centre lines
         this._levelTurning     = false;  // a field being cleared and resown
         this.cropLevel         = CONFIG.CROPS.START_LEVEL;
+        // The harvest's leaves. ONE emitter for the whole farm, built on the
+        // first pick and rebuilt only when the crop's size changes — see
+        // _leafBurst.
+        this.leafEmitter       = null;
+        this._leafScale        = 0;
 
         // Layout state for responsive design
         this.isPortrait         = true;  // Detected in create()
@@ -590,11 +595,12 @@ class GameScene extends Phaser.Scene {
     // see CROPS.SPRITE_SPACE.
     //
     // Worked out HERE rather than in buildCrops because the slots need it too:
-    // a slot and its plant are laid out as one pair, and the pair cannot be
-    // centred until both halves of it have a width.
+    // a plot is its plants with its slot underneath, and neither the slot's
+    // place nor the plot's own height can be found until the plants have a
+    // size.
     _cropBox() {
         const C = CONFIG.CROPS || {}, SS = C.SPRITE_SPACE || {};
-        const h = this.layoutConfig.rowH * (SS.HEIGHT_FRAC !== undefined ? SS.HEIGHT_FRAC : 0.70);
+        let h = this.layoutConfig.rowH * (SS.HEIGHT_FRAC !== undefined ? SS.HEIGHT_FRAC : 0.70);
         const refK = `crop_${SS.REF || 'tomato'}`;
         // The aspect comes off THE FRAME, not the file: the file is however many
         // frames wide, and dividing its width by a frame count nobody counted is
@@ -605,6 +611,17 @@ class GameScene extends Phaser.Scene {
             const f = this.textures.get(refK).get(0);
             if (f && f.height) aspect = f.width / f.height;
         }
+
+        // A PLOT MAY NOT REACH INTO ITS NEIGHBOUR'S COLUMN. The height is what
+        // the box wants to be; the width follows from it, and on a farm half
+        // that is wide for its height the three of them would meet in the
+        // middle. So the width is checked against the column first and the
+        // HEIGHT gives way — never the aspect, which would squash the plant
+        // rather than shrink it.
+        const FS   = (CONFIG.PLATFORM || {}).FARM_SLOTS || {};
+        const colW = (this.layoutConfig.partB.width / 3)
+                   * (FS.COLUMN_FRAC !== undefined ? FS.COLUMN_FRAC : 0.86);
+        if (h * aspect > colW) h = colW / aspect;
         return { w: h * aspect, h };
     }
 
@@ -616,33 +633,56 @@ class GameScene extends Phaser.Scene {
         const B     = L.partB;
 
         const ssz      = L.slotSize;
-        const rowH     = L.rowH;
         const fontSize = Math.max(12, Math.round(22 * scale)) + 'px';
 
-        // ── THE PAIR ──────────────────────────────────────────────────────
-        // A slot and the plant it feeds are laid out TOGETHER: side by side with
-        // a small gap, and the pair centred on the farm half. That is what makes
-        // the pairing read — two things touching are one thing, and two things
-        // at opposite ends of a half are two things that happen to share a line.
+        // ── THE PLOT ──────────────────────────────────────────────────────
+        // A plant and the slot that feeds it are laid out TOGETHER, one ABOVE
+        // the other: the plant standing on its ground line and its slot
+        // directly beneath, with a small gap. That stack is one plot, and the
+        // closeness is what says the two belong to each other — the slot is
+        // the thing under this plant, not a control that happens to share a
+        // line with it.
         //
-        // The slot column used to be pinned to the half's left edge with the
-        // plants centred in whatever was left, which put a third of the half
-        // between a battery and the plant it was working on.
+        // THREE PLOTS ACROSS, ALL ON ONE LINE: side by side over the width of
+        // the half, every plant standing on the same ground line and every
+        // slot on the same line under it. Across rather than stacked, so the
+        // half reads left to right like the rest of the game; LEVEL rather
+        // than stepped, because three plants at three different heights are
+        // three different things — one line is what makes them one row of the
+        // same crop, which is what they are.
+        //
+        // A COLUMN EACH, and the plant is fitted inside it (see _cropBox), so
+        // no plot can ever reach into its neighbour's.
         const FS      = P.FARM_SLOTS || {};
         const box     = this.cropBox = this._cropBox();
-        const pairGap = s(FS.PAIR_GAP !== undefined ? FS.PAIR_GAP : 16);
-        const groupW  = ssz + pairGap + box.w;
-        const groupL  = B.x + (B.width - groupW) / 2;
-        const colX    = groupL + ssz / 2;
-        // Where every plant centres. Held here, with the geometry that decides
-        // it, so buildCrops cannot place them anywhere else.
-        this.cropCx   = groupL + ssz + pairGap + box.w / 2;
+        const slotGap = s(FS.SLOT_GAP !== undefined ? FS.SLOT_GAP : 16);
+        const colW    = B.width / 3;
 
-        // The three rows, centred on the half however tall they come out.
-        const bandTop = B.y + (B.height - 3 * rowH) / 2;
-        this.farmRows = [0, 1, 2].map((i) => ({ cy: bandTop + rowH * (i + 0.5) }));
+        // HEADROOM FOR THE FIGURE over the plant's head — the plot starts
+        // above the plant, not at it, or the number would be cut off by the
+        // half's own edge. Taken from the label's own size so it cannot drift
+        // out of step with it.
+        const YL   = (CONFIG.CROPS || {}).YIELD_LABEL || {};
+        const head = ((YL.SIZE || 24) + (YL.GAP !== undefined ? YL.GAP : 4)) * L.scale;
 
-        this.stationCenterX = colX;
+        // THE PLOT'S OWN HEIGHT, top of the figure to the bottom of the rate
+        // label under the slot — the rate is part of the plot, and a plot
+        // measured without it would hang off the half's bottom edge. The three
+        // are identical, so what the half has left over is simply the margin,
+        // half of it above and half below.
+        const tail  = s(P.CHARGE_RATE_GAP) + 22 * scale;
+        const plotH = head + box.h + slotGap + ssz + tail;
+        const top   = B.y + Math.max(0, B.height - plotH) / 2;
+
+        // Where each plot's plant centres — its column's middle, and the one
+        // line they all stand on. Held here, with the geometry that decides
+        // it, so buildCrops cannot place a plant anywhere else.
+        this.farmRows = [0, 1, 2].map((i) => ({
+            cx: B.x + colW * (i + 0.5),
+            cy: top + head + box.h / 2,
+        }));
+
+        this.stationCenterX = this.farmRows[1].cx;
         this.slotY          = this.farmRows[1].cy;
         this.slotSize       = ssz;
 
@@ -651,7 +691,12 @@ class GameScene extends Phaser.Scene {
         this._makeCellTextures(L.cellSize);
 
         for (let i = 0; i < 3; i++) {
-            const slotX = colX, slotYi = this.farmRows[i].cy;
+            // UNDER THE PLANT, measured off the ground line it stands on (the
+            // box's floor) rather than off the row's centre, so the gap
+            // between a plant's feet and its slot is the same on every plot
+            // however tall the crop of the moment happens to be.
+            const slotX  = this.farmRows[i].cx;
+            const slotYi = this.farmRows[i].cy + box.h / 2 + slotGap + ssz / 2;
 
             // Empty and filled are two drawings of the same square, swapped
             // rather than redrawn: the empty one is an outline, the filled one
@@ -663,22 +708,22 @@ class GameScene extends Phaser.Scene {
             const slotBgFilled = this.add.image(slotX, slotYi, 'cell_face')
                 .setDisplaySize(face, face).setDepth(3).setVisible(false);
 
-            // What this cell gives, OVER its square, in both orientations.
+            // What this cell gives, UNDER its square. It used to sit above,
+            // which was the free side back when the plant stood BESIDE the
+            // slot; the plant is directly overhead now, so above is the one
+            // place it cannot go — it would be read against the plant's feet,
+            // or collide with them outright on a tall crop.
             //
-            // There is room for it up there because a row is sized by the PLANT
-            // beside the slot, not by the slot — so the space between one slot
-            // and the one above it is the best part of a slot's height again,
-            // where a column packed to the slots had none. Above beats beside:
-            // it is the same reading line as the figure over the plant, and it
-            // leaves both sides of the slot clear — the plant's side, which is
-            // deliberately tight, and the outer side, which the hint arrow uses.
+            // Under the slot it has the whole bottom of the plot to itself,
+            // and it still leaves the slot's sides clear: the hint arrow comes
+            // in from one of them.
             const SR = CONFIG.PLATFORM.SLOT_RATE || {};
-            const chargeRateText = this.add.text(slotX, slotYi - ssz / 2 - s(P.CHARGE_RATE_GAP), '', {
+            const chargeRateText = this.add.text(slotX, slotYi + ssz / 2 + s(P.CHARGE_RATE_GAP), '', {
                 fontSize, fontFamily: CONFIG.FONT_FAMILY,
                 color: SR.COLOR || '#ffffff', fontStyle: CONFIG.FONT_WEIGHT,
                 stroke: SR.STROKE || '#3a2a00',
                 strokeThickness: Math.max(1, Math.round((SR.STROKE_W !== undefined ? SR.STROKE_W : 3) * scale)),
-            }).setOrigin(0.5, 1).setDepth(5).setVisible(false);
+            }).setOrigin(0.5, 0).setDepth(5).setVisible(false);
 
             this.platforms.push({
                 index: i,
@@ -771,11 +816,13 @@ class GameScene extends Phaser.Scene {
         const s = this.layoutConfig.scale;
 
         // THE BOX, and where the plants stand in it — both decided in
-        // createSlots, because a slot and its plant are laid out as one pair and
-        // neither half can be placed without the other's width.
+        // createSlots, because a plant and the slot under it are laid out as
+        // one plot and neither half can be placed without the other's size.
+        // Each plot carries its OWN centre line now (farmRows[i].cx): the
+        // three stand across the half rather than down it, so there is no one
+        // column they all share.
         const box  = this.cropBox || this._cropBox();
         const f0   = this.textures.get(`crop_${name}`).get(0);
-        const cx   = this.cropCx;
         const boxH = box.h;
 
         // CONTAINED, never stretched: the smaller of the two fits wins, so the
@@ -817,17 +864,39 @@ class GameScene extends Phaser.Scene {
             // ON THE BOX'S FLOOR, not centred in it. A plant stands on ground,
             // so a crop that does not fill the box's height should be short at
             // the top rather than floating clear of a line the others stand on.
+            //
+            // THE PLOT'S OWN CENTRE LINE, not a shared one: each plot has its
+            // column, and its slot is directly under this same x.
+            const cx    = row.cx;
             const baseY = row.cy + boxH / 2;
+            // MIRRORED, ON THE PLOTS THAT ASK FOR IT. The three plots grow the
+            // same crop from the same sheet, so side by side they are the same
+            // picture three times — and three identical things in a row read as
+            // one repeated object rather than three plants. Turning the middle
+            // one left-to-right costs nothing and breaks the repeat: the plants
+            // lean different ways and the fruit hangs on the other side, which
+            // is all the eye needs to stop counting copies.
+            //
+            // It is a FLIP, not a second drawing — see CROPS.MIRROR_ROWS.
+            const flip = (C.MIRROR_ROWS || [1]).indexOf(i) >= 0;
             const crop = {
                 name, level: lvl, row: i, w, h, cx, baseY, cy: baseY - h / 2,
                 // THE PLANT STANDS ON THE FLOOR — foot origin, so a crop that
                 // does not fill the box's height is short at the top rather than
                 // floating clear of the line the others stand on.
                 plant: this.add.image(cx, baseY, `crop_${name}`, 0)
-                    .setDisplaySize(w, h).setOrigin(0.5, 1).setDepth(D.PLANT),
+                    .setDisplaySize(w, h).setOrigin(0.5, 1).setDepth(D.PLANT)
+                    .setFlipX(flip),
                 fruit: null,                    // put there by _newFruit, below
                 total: yields[i], left: yields[i], done: false,
                 label: null, regrow: null,
+                // The tug a pick gives it, and which way the last one went —
+                // they alternate. See _shakePlant.
+                shake: null, shakeDir: -1,
+                // Carried so every fruit this plant ever grows is turned the
+                // same way it is — a mirrored plant with an unmirrored fruit
+                // would hang its produce off the wrong side of itself.
+                flip,
                 // A ROOT CROP's produce grows under the plant rather than on it,
                 // so it rests BEHIND — see _newFruit.
                 root: this._isRoot(name),
@@ -871,8 +940,8 @@ class GameScene extends Phaser.Scene {
                 }).setOrigin(0.5, 0).setDepth(D.LABEL);
             }
 
-            // THE PAIRING, WRITTEN DOWN. The row puts them on one line, which is
-            // what the player reads; this is what the code reads, so the harvest
+            // THE PAIRING, WRITTEN DOWN. The plot stacks them, which is what
+            // the player reads; this is what the code reads, so the harvest
             // asks the slot for its plant rather than matching two positions up.
             if (this.platforms[i]) this.platforms[i].crop = crop;
             return crop;
@@ -949,6 +1018,12 @@ class GameScene extends Phaser.Scene {
             onComplete: () => fr.destroy(),
         });
 
+        // AND THE PLANT IS SHAKEN BY IT. Leaves come away where the fruit was
+        // and fall past the plant — the pick's own debris, which is what says
+        // the fruit was TORN OFF something living rather than deleted from it.
+        this._leafBurst(fr.x, fr.y, crop.h);
+        this._shakePlant(crop);
+
         // THE NEXT ONE IS ALREADY COMING, and it does not wait for this one to
         // clear the frame. A few hundred ms after the pick, so there is a beat
         // of bare plant to see, and then it grows while the picked one is still
@@ -985,8 +1060,12 @@ class GameScene extends Phaser.Scene {
         // the tuber and the two read as one plant rooted in the soil.
         const rest = crop.root ? (D.ROOT_FRUIT !== undefined ? D.ROOT_FRUIT : 3)
                                : (D.FRUIT      !== undefined ? D.FRUIT      : 5);
+        // TURNED THE SAME WAY THE PLANT IS. Both frames are drawn over exactly
+        // the same rectangle, so the flip that mirrors the plant has to mirror
+        // its fruit too — otherwise a mirrored plant grows its produce on the
+        // side it no longer has.
         const fr = this.add.image(crop.cx, crop.cy, `crop_${crop.name}`, 1)
-            .setDisplaySize(crop.w, crop.h).setDepth(rest);
+            .setDisplaySize(crop.w, crop.h).setDepth(rest).setFlipX(!!crop.flip);
         crop.fruit = fr;
         if (!grown) return fr;
 
@@ -1003,6 +1082,135 @@ class GameScene extends Phaser.Scene {
             onComplete: () => { if (fr.scene) fr.setScale(sx, sy); },
         });
         return fr;
+    }
+
+    // ── The tug ──────────────────────────────────────────────────────────────
+    // The plant is pulled as its fruit comes off. A COUPLE OF DEGREES and back,
+    // no more: the pick already has a fruit leaving and a scatter of leaves
+    // saying it happened, and a third thing shouting it would be the one too
+    // many. This is the part you feel rather than see.
+    //
+    // IT PIVOTS AT THE FOOT, for free — the plant is pinned there by its origin
+    // so it stands in the ground, and a rotation about that point is a stem
+    // being tugged rather than a picture being wobbled.
+    //
+    // AND IT ALTERNATES. Each pick pulls the opposite way to the last, because
+    // a plant nodding the same way once a second is a metronome.
+    _shakePlant(crop) {
+        const S = ((CONFIG.CROPS || {}).PICK || {}).SHAKE || {};
+        if (S.ENABLED === false) return;
+        const pl = crop.plant;
+        if (!pl || !pl.scene) return;
+
+        // A pick landing while the last tug is still running would otherwise
+        // leave the plant leaning: the tween is killed and the angle put back
+        // before the new one starts from a known place.
+        if (crop.shake) { crop.shake.remove(); crop.shake = null; }
+        pl.setAngle(0);
+
+        crop.shakeDir = -(crop.shakeDir || -1);
+        crop.shake = this.tweens.add({
+            targets: pl,
+            angle: (S.ANGLE !== undefined ? S.ANGLE : 2.2) * crop.shakeDir,
+            duration: S.MS !== undefined ? S.MS : 95,
+            ease: S.EASE || 'Sine.easeOut',
+            yoyo: true,
+            repeat: S.REPEAT !== undefined ? S.REPEAT : 0,
+            onComplete: () => { crop.shake = null; if (pl.scene) pl.setAngle(0); },
+        });
+    }
+
+    // ── The leaf, baked once ─────────────────────────────────────────────────
+    // A LENS, not an ellipse: two curves meeting in a point at either end. At
+    // the size these are drawn it is the only thing that separates a leaf from
+    // a green dot, and it costs one extra curve to say it.
+    //
+    // DRAWN WHITE and tinted at the emitter, so one texture covers every green
+    // in the list — and a tint is free where a second baked canvas is not.
+    // The midrib goes down as translucent black, which the tint then carries to
+    // a darker shade of whatever green the particle drew.
+    _leafTexture() {
+        const key = 'crop_leaf';
+        if (this.textures.exists(key)) return key;
+        const L = (CONFIG.CROPS || {}).LEAF_BURST || {};
+        const px = Math.max(6, Math.round(L.TEXTURE_PX || 24));
+        const canvas = this.textures.createCanvas(key, px, px);
+        const ctx = canvas.getContext();
+        ctx.clearRect(0, 0, px, px);
+        const m = px / 2;
+        ctx.beginPath();
+        ctx.moveTo(0.5, m);
+        ctx.quadraticCurveTo(m, 0,  px - 0.5, m);
+        ctx.quadraticCurveTo(m, px, 0.5,      m);
+        ctx.closePath();
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+        ctx.lineWidth = Math.max(1, px / 16);
+        ctx.beginPath();
+        ctx.moveTo(px * 0.12, m);
+        ctx.lineTo(px * 0.88, m);
+        ctx.stroke();
+        canvas.refresh();
+        return key;
+    }
+
+    // ── A harvest's leaves ───────────────────────────────────────────────────
+    // Thrown out of the canopy where the fruit came away and dropped past the
+    // plant: out and UP first, then over and down under gravity, tumbling as
+    // they go. Up-then-down rather than straight down, because straight down is
+    // something falling off a plant and out-then-down is something being pulled
+    // OFF one — which is the difference between a plant shedding and a plant
+    // being worked.
+    //
+    // ONE EMITTER FOR THE WHOLE FARM, made on the first pick and parked with
+    // `emitting: false`, then fired at a point. Three plants picking once a
+    // second each would otherwise build and tear down an emitter three times a
+    // second for the length of the run.
+    //
+    // `plantH` sizes the leaves, so they stay in proportion to the crop they
+    // came off rather than to the screen.
+    _leafBurst(x, y, plantH) {
+        const L = (CONFIG.CROPS || {}).LEAF_BURST || {};
+        if (L.ENABLED === false) return;
+        const s  = this.layoutConfig.scale;
+        const px = Math.max(6, Math.round(L.TEXTURE_PX || 24));
+        // Against the TEXTURE's own size, because the leaf is drawn at whatever
+        // px it was baked at and a particle's scale is a multiple of that.
+        const sc = plantH * (L.SIZE_FRAC !== undefined ? L.SIZE_FRAC : 0.17) / px;
+
+        // THE SIZE IS BAKED INTO THE EMITTER, so one built for last level's
+        // crop would go on throwing last level's leaves. Rebuilt when it
+        // changes — which is on a level turn or a resize, not on a pick.
+        if (this.leafEmitter && (!this.leafEmitter.scene || this._leafScale !== sc)) {
+            this.leafEmitter.destroy();
+            this.leafEmitter = null;
+        }
+        if (!this.leafEmitter) {
+            const D = (CONFIG.CROPS || {}).DEPTH || {};
+            this._leafScale = sc;
+            this.leafEmitter = this.add.particles(0, 0, this._leafTexture(), {
+                lifespan: { min: L.LIFE_MIN !== undefined ? L.LIFE_MIN : 620,
+                            max: L.LIFE_MAX !== undefined ? L.LIFE_MAX : 1050 },
+                // OUT AND UP: the upward half of the circle, so every leaf
+                // leaves the canopy going away from it and gravity is what
+                // turns each one over and brings it down.
+                angle: { min: L.ANGLE_MIN !== undefined ? L.ANGLE_MIN : -165,
+                         max: L.ANGLE_MAX !== undefined ? L.ANGLE_MAX : -15 },
+                speed: { min: (L.SPEED_MIN !== undefined ? L.SPEED_MIN : 45)  * s,
+                         max: (L.SPEED_MAX !== undefined ? L.SPEED_MAX : 130) * s },
+                gravityY: (L.GRAVITY !== undefined ? L.GRAVITY : 420) * s,
+                scale: { min: sc * (L.SCALE_MIN !== undefined ? L.SCALE_MIN : 0.7), max: sc },
+                // ONE TURN OVER ITS LIFE. They do not spin in step despite the
+                // same sweep, because no two leaves are given the same lifespan
+                // to take it in.
+                rotate: { start: 0, end: 360 },
+                alpha: { start: 1, end: 0, ease: 'Quad.easeIn' },
+                tint: (L.COLORS || [0x6ab04c, 0x4e9a3e, 0x8bc34a, 0x3f7d33]),
+                emitting: false,
+            }).setDepth(D.LEAF !== undefined ? D.LEAF : 3.5);
+        }
+        this.leafEmitter.emitParticleAt(x, y, L.COUNT !== undefined ? L.COUNT : 9);
     }
 
     // A new plant coming up. Plant AND fruit together, from a fraction of full
@@ -1959,11 +2167,11 @@ class GameScene extends Phaser.Scene {
     // the other two are for. In-and-back rather than a full bounce — the motion
     // has to point, and a symmetric bob points at nothing.
     //
-    // FROM THE OUTER SIDE, BOTH ORIENTATIONS — the side away from the plant.
-    // The gap on the plant's side is small on purpose, and an arrow driven
-    // across it would arrive over the plant rather than over the slot. Above is
-    // taken by the charge-rate figure, and an arrow is only ever shown on an
-    // EMPTY slot, but the two would still be pointing at the same piece of sky.
+    // FROM THE SIDE, BOTH ORIENTATIONS — which is the only way in. The plant
+    // stands directly above its slot and the charge-rate figure sits directly
+    // below it, so an arrow driven in from either of those would arrive over
+    // something else that is already saying something. The sides are what the
+    // plot deliberately leaves clear.
     _showSlotHint() {
         const H = CONFIG.SLOT_HINT || {};
         if (H.ENABLED === false || this.slotHintDone || this.slotHints) return;

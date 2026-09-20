@@ -514,26 +514,30 @@ var CONFIG = {
         // its plus signs, its terminal, the running total beside it and the
         // ghost all went with the machine they were describing.
         FARM_SLOTS: {
-            // Slot → its plant (px @ design). SMALL ON PURPOSE: a slot and the
-            // plant it feeds are laid out as one pair, centred on the farm half
-            // together, and it is the closeness that says they belong to each
-            // other. Open this up and they go back to being two things that
-            // happen to share a line.
+            // The plant's FEET → the slot under it (px @ design). SMALL ON
+            // PURPOSE: a plant and the slot that feeds it are laid out as one
+            // plot, stacked, and it is the closeness that says they belong to
+            // each other. Open this up and they go back to being two things
+            // that happen to share a column.
             //
-            // Nothing else may sit in this gap — the rate label and the hint
-            // arrow both go to the slot's OUTER side for that reason.
-            PAIR_GAP: 16,
-            // How much of the half's HEIGHT the three rows take between them.
-            // A row holds a slot and the plant beside it, and the band is
-            // centred on the half, so what is left over is the margin above the
-            // first row and below the last.
+            // Nothing else may sit in this gap — the rate label went UNDER the
+            // slot when the plant took the space above it.
+            SLOT_GAP: 16,
+            // HOW WIDE A PLOT MAY GROW inside its third of the farm half. The
+            // three stand side by side across the half, so this is what keeps
+            // a gap between one plot and the next: the plant is shrunk to fit
+            // it rather than allowed to reach into its neighbour's column.
+            COLUMN_FRAC: 0.86,
+            // How much of the half's HEIGHT one plot's plant is sized against.
+            // It is what the crop box's height comes from, and the plots are
+            // stepped down the half from it — see createSlots.
             BAND_FRAC: 0.94,
             // The slot's size as a fraction of its ROW — the cap, not the
             // target. A slot is a grid cell wherever there is room for one and
             // only shrinks when this says it must, which is on a farm half too
-            // short to give three rows a cell's worth. Well under half, because
-            // the row's height belongs to the plant: the slot is the short thing
-            // standing beside it.
+            // short to give three plots a cell's worth. Well under half,
+            // because the plot's height belongs to the plant: the slot is the
+            // short thing standing under it.
             SLOT_FRAC: 0.62,
         },
 
@@ -591,6 +595,23 @@ var CONFIG = {
         // bush. It comes to the front the instant it is pulled — that is what
         // being lifted out of the ground looks like (see CROPS.DEPTH).
         ROOT: ['potato', 'onion'],
+
+        // ── WHICH PLOTS ARE MIRRORED ────────────────────────────────────────
+        // By plot, left to right: 0, 1, 2. A plot listed here draws its plant
+        // — and every fruit that plant grows — flipped left to right.
+        //
+        // THE MIDDLE ONE, because the three plots grow the same crop from the
+        // same sheet and stand side by side: without this they are the same
+        // picture three times over, and three identical things in a row read
+        // as one object repeated rather than as three plants. Mirroring the
+        // middle one leans it the other way and hangs its fruit on the other
+        // side, which is enough to break the repeat — and it costs nothing,
+        // being a flip rather than a second drawing.
+        //
+        // Not the outer two as well: 0 and 2 are far enough apart that the eye
+        // does not hold them side by side, and mirroring both would only make
+        // a new pattern out of the three.
+        MIRROR_ROWS: [1],
         START_LEVEL: 1,
         // THREE OF THEM, one per battery slot, each on its slot's centre line.
         // The count is not a setting: it is however many slots there are.
@@ -600,6 +621,14 @@ var CONFIG = {
         // and its produce is nearer is the entire difference a root crop makes.
         //
         //   ROOT_FRUIT  a potato or onion at rest: UNDER the foliage
+        //   LEAF        the harvest's leaves, BEHIND the plant that threw them.
+        //               In front they crossed the plant's own face once a
+        //               second and read as something thrown AT it; behind, the
+        //               plant covers them as they fall and they read as coming
+        //               off its back — which is where a picked plant actually
+        //               sheds. The half step is deliberate: it clears the slot
+        //               square below (drawn at 3), so leaves falling that far
+        //               are not swallowed by it.
         //   PLANT       the leaves
         //   FRUIT       an ordinary crop's produce at rest: ON the plant
         //   PICKED      any produce while it is being lifted — in front of the
@@ -610,6 +639,7 @@ var CONFIG = {
         //               player is reading
         DEPTH: {
             ROOT_FRUIT: 3,
+            LEAF:       3.5,
             PLANT:      4,
             FRUIT:      5,
             PICKED:     6,
@@ -756,6 +786,24 @@ var CONFIG = {
             MS:   420,
             EASE: 'Sine.easeOut',
 
+            // ── THE TUG ─────────────────────────────────────────────────────
+            // The plant leans as its fruit is pulled off it, and comes back.
+            // DELIBERATELY SMALL: the fruit leaving and the leaves scattering
+            // already say a pick landed, and a plant thrashing on top of them
+            // is a third voice saying the same thing. Two degrees is felt more
+            // than it is seen, which is all this is for.
+            //
+            // It pivots at the plant's FOOT (its origin), so the lean is a stem
+            // being tugged rather than the whole picture rocking.
+            SHAKE: {
+                ENABLED: true,
+                ANGLE:  2.2,    // degrees. Past ~5 it stops reading as a tug
+                                // and starts reading as wind
+                MS:      95,    // one way; it yoyos back over the same time
+                REPEAT:   0,    // extra out-and-backs. 1 gives a double tug
+                EASE: 'Sine.easeOut',
+            },
+
             // ── THE NEW FRUIT ───────────────────────────────────────────────
             // A few beats after the pick, not after the flight: there is a
             // moment of bare plant to see, and then it grows while the picked
@@ -771,6 +819,44 @@ var CONFIG = {
             // what makes it read as arriving. 'Quad.easeOut' for a strict climb
             // from POP_FROM to 1 with no overshoot at all.
             POP_EASE: 'Back.easeOut',
+        },
+
+        // ── THE LEAVES A PICK THROWS ────────────────────────────────────────
+        // A handful of small green leaves burst out of the canopy on every
+        // pick and fall away past the plant. The fruit leaving says WHAT was
+        // taken; the leaves say it was taken off something living — a plant
+        // that gives its produce up without being disturbed reads as a vending
+        // machine, not a crop.
+        //
+        // OUT AND UP, THEN DOWN. They are thrown into the upper half of the
+        // circle (ANGLE_MIN..MAX, degrees, -90 being straight up) and GRAVITY
+        // turns each one over and brings it down, so the shape of the burst is
+        // a spray rather than a drip. Wind ANGLE toward -90 for a fountain,
+        // widen it toward 0/-180 for a sideways scatter.
+        LEAF_BURST: {
+            ENABLED: true,
+            COUNT:   9,        // leaves per pick
+            // The leaf's length as a share of the PLANT's height, so they stay
+            // in proportion to the crop that threw them rather than to the
+            // screen.
+            SIZE_FRAC: 0.17,
+            SCALE_MIN: 0.7,    // the smallest of them, against that size
+            // Speeds and the pull are px/second at the design scale; the game
+            // scales them with everything else.
+            SPEED_MIN:  45,
+            SPEED_MAX: 130,
+            GRAVITY:   420,
+            ANGLE_MIN: -165,
+            ANGLE_MAX:  -15,
+            LIFE_MIN:  620,    // ms. The spread between the two is what keeps
+            LIFE_MAX: 1050,    // them from falling and fading in step
+            // FOUR GREENS, not one: a burst in a single flat green reads as
+            // confetti. Picked at random per leaf.
+            COLORS: [0x6ab04c, 0x4e9a3e, 0x8bc34a, 0x3f7d33],
+            // The baked leaf's own size in px. It is only the drawing's
+            // resolution — SIZE_FRAC is what decides how big one looks — so
+            // raise it only if the leaves look soft on a large screen.
+            TEXTURE_PX: 24,
         },
     },
 };
