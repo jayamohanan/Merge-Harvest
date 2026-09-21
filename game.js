@@ -44,7 +44,7 @@ class AssetManager {
         const key = `battery${level}`;
         const data = getBatteryData(level);
         if (!data) return Promise.resolve();
-        return this.ensureImage(key, `graphics/battery/${data.fileName}`);
+        return this.ensureImage(key, data.path);
     }
 
     // A battery texture that EXISTS RIGHT NOW: the level's own if it is in
@@ -66,10 +66,19 @@ class AssetManager {
     // Draw `spr` as `iconLvl` as soon as that art is in hand. Safe to call for a
     // texture already loaded — it simply sets it.
     dressWhenReady(spr, iconLvl) {
+        // setTexture keeps the sprite's SCALE, not the size it was drawn at, so
+        // art on a different canvas to the placeholder's would land at the
+        // wrong size — the cell was fitted to a number of pixels, not to a
+        // multiplier. Put the size back after every swap.
+        const wear = (key) => {
+            const w = spr.displayWidth, h = spr.displayHeight;
+            spr.setTexture(key);
+            spr.setDisplaySize(w, h);
+        };
         const key = `battery${iconLvl}`;
-        if (this.scene.textures.exists(key)) { spr.setTexture(key); return; }
+        if (this.scene.textures.exists(key)) { wear(key); return; }
         this.ensureBattery(iconLvl).then(() => {
-            if (spr && spr.scene && this.scene.textures.exists(key)) spr.setTexture(key);
+            if (spr && spr.scene && this.scene.textures.exists(key)) wear(key);
         });
     }
 
@@ -136,6 +145,7 @@ class GameScene extends Phaser.Scene {
         // picks them.
         this.crops             = null;
         this.farmRows          = null;   // the slot/plant centre lines
+        this.piggyBanks        = null;   // one over each plot — where its fruit goes
         this._levelTurning     = false;  // a field being cleared and resown
         this.cropLevel         = CONFIG.CROPS.START_LEVEL;
         // The harvest's leaves. ONE emitter for the whole farm, built on the
@@ -300,14 +310,33 @@ class GameScene extends Phaser.Scene {
             const inner = Math.max(8, box - 2 * pad);
             const textH = inner * (MB.TEXT_SHARE !== undefined ? MB.TEXT_SHARE : 0.24);
             const batt  = Math.max(4, inner - textH - gap);
+            // BATTERY ON TOP, LABEL UNDER IT — stacked in that order inside
+            // the padded box, so the number reads as a caption to the tool
+            // rather than a tag floating over it.
             const top   = -inner / 2;
-            const textC = top + textH / 2;
-            const battC = top + textH + gap + batt / 2;
+            const textC = top + batt + gap + textH / 2;
+            // FITTED, NOT STRETCHED. The icon fills the width the padding
+            // leaves and the height the label leaves, whichever runs out
+            // first, at the art's OWN ratio — so square art is capped by the
+            // height and wide art by the width, and neither is squashed to
+            // reach the other edge.
+            const asp   = Math.max(0.05, CONFIG.CELL.ICON_ASPECT || 1);
+            const h     = Math.max(4, Math.min(inner / asp, batt));
+            const w     = h * asp;
+            // TOP EDGE ON THE PADDING LINE rather than centred in the space it
+            // was given. Art that does not use the full height would otherwise
+            // float, and a row of cells holding different levels would not line
+            // their heads up.
+            const battC = top + h / 2;
             return {
-                size: Math.round(batt),
+                w:    Math.round(w),
+                h:    Math.round(h),
                 yOff: Math.round(battC),
                 // The label's offset is measured from the BATTERY, not the box:
                 // the sprite is placed at yOff and the text at yOff + tOff.
+                // Positive now, since the label sits below. textC comes off the
+                // BOX, so the label holds its line whatever height the art
+                // turns out to want.
                 tOff: Math.round(textC - battC),
                 text: Math.max(8, Math.round(textH /
                         (MB.LINE !== undefined ? MB.LINE : 1.28) *
@@ -320,20 +349,24 @@ class GameScene extends Phaser.Scene {
         // is usually well under one. Sizing both from the cell overflowed the
         // slots — the battery ran clean past the bottom edge, which is what
         // looked like the padding not being applied at all.
-        let batteryDisplaySize, batteryYOffset, levelTextYOffset, levelTextSize;
-        let slotBatterySize, slotBatteryYOffset, slotLevelTextYOffset, slotLevelTextSize;
-        if (isP && MB.ENABLED !== false) {
+        let batteryDisplayW, batteryDisplayH, batteryYOffset, levelTextYOffset, levelTextSize;
+        let slotBatteryW, slotBatteryH, slotBatteryYOffset, slotLevelTextYOffset, slotLevelTextSize;
+        // BOTH ORIENTATIONS DERIVE, unless CELL.FIT_TO_CELL is turned off — and
+        // portrait derives even then, which is where this started.
+        const fitCell = CONFIG.CELL.FIT_TO_CELL !== false || (isP && MB.ENABLED !== false);
+        if (fitCell) {
             const cf = fitBox(cellSize), sf = fitBox(slotSize);
-            batteryDisplaySize = cf.size; batteryYOffset = cf.yOff;
+            batteryDisplayW = cf.w; batteryDisplayH = cf.h; batteryYOffset = cf.yOff;
             levelTextYOffset   = cf.tOff; levelTextSize  = cf.text;
-            slotBatterySize    = sf.size; slotBatteryYOffset   = sf.yOff;
+            slotBatteryW    = sf.w; slotBatteryH = sf.h; slotBatteryYOffset = sf.yOff;
             slotLevelTextYOffset = sf.tOff; slotLevelTextSize  = sf.text;
         } else {
-            batteryDisplaySize = Math.round(CONFIG.CELL.BATTERY_DISPLAY_SIZE * scale);
+            const authored = Math.round(CONFIG.CELL.BATTERY_DISPLAY_SIZE * scale);
+            batteryDisplayW = batteryDisplayH = authored;
             batteryYOffset     = Math.round(CONFIG.CELL.BATTERY_Y_OFFSET     * scale);
             levelTextYOffset   = Math.round(CONFIG.CELL.LEVEL_TEXT_Y_OFFSET  * scale);
             levelTextSize      = Math.max(8, Math.round(11 * scale)) + 'px';
-            slotBatterySize      = batteryDisplaySize;
+            slotBatteryW = slotBatteryH = authored;
             slotBatteryYOffset   = batteryYOffset;
             slotLevelTextYOffset = levelTextYOffset;
             slotLevelTextSize    = levelTextSize;
@@ -369,8 +402,8 @@ class GameScene extends Phaser.Scene {
             sW, sH, scale,
             panelCenterY, buttonCenterY, coinCenterY, slotSize, rowH,
             // Battery / cell content
-            batteryDisplaySize, batteryYOffset, levelTextYOffset, levelTextSize,
-            slotBatterySize, slotBatteryYOffset, slotLevelTextYOffset, slotLevelTextSize,
+            batteryDisplayW, batteryDisplayH, batteryYOffset, levelTextYOffset, levelTextSize,
+            slotBatteryW, slotBatteryH, slotBatteryYOffset, slotLevelTextYOffset, slotLevelTextSize,
             // Spawn button contents
             spawnCoinTextSize, spawnCoinTextX, spawnCoinIconX, spawnCoinIconSize,
             spawnBattIconX, spawnBattIconSize,
@@ -487,8 +520,10 @@ class GameScene extends Phaser.Scene {
             `button=(${_cx.toFixed(0)},${L.buttonCenterY.toFixed(0)})`);
         this.CELL_SIZE          = L.cellSize;
         this.CELL_GAP           = L.cellGap;
-        this.batteryDisplaySize = L.batteryDisplaySize;
-        this.slotBatterySize      = L.slotBatterySize;
+        this.batteryDisplayW    = L.batteryDisplayW;
+        this.batteryDisplayH    = L.batteryDisplayH;
+        this.slotBatteryW         = L.slotBatteryW;
+        this.slotBatteryH         = L.slotBatteryH;
         this.slotBatteryYOffset   = L.slotBatteryYOffset;
         this.slotLevelTextYOffset = L.slotLevelTextYOffset;
         this.slotLevelTextSize    = L.slotLevelTextSize;
@@ -665,14 +700,42 @@ class GameScene extends Phaser.Scene {
         const YL   = (CONFIG.CROPS || {}).YIELD_LABEL || {};
         const head = ((YL.SIZE || 24) + (YL.GAP !== undefined ? YL.GAP : 4)) * L.scale;
 
-        // THE PLOT'S OWN HEIGHT, top of the figure to the bottom of the rate
-        // label under the slot — the rate is part of the plot, and a plot
-        // measured without it would hang off the half's bottom edge. The three
-        // are identical, so what the half has left over is simply the margin,
-        // half of it above and half below.
+        // THE PIGGY BANKS ARE FURNITURE, NOT PART OF THE PLOT. They hang off
+        // the TOP EDGE of the half on a small pad — a UI row that stays put,
+        // the way the coin counter does — rather than riding on top of the
+        // plant stack. Pinned like that they keep one line whatever crop is in
+        // the field and however tall the half happens to be, which is what a
+        // readout wants; stacked on the plot they would drift down the screen
+        // every time the plants needed more room.
+        //
+        // partB starts at y = 0 in both orientations (portrait it is the top
+        // half, landscape the right one, full height), so the half's top edge
+        // IS the screen's top edge.
+        const PG     = (CONFIG.CROPS || {}).PIGGY || {};
+        const pigOn  = PG.ENABLED !== false && this.textures.exists('piggy_bank');
+        const pigPad = (PG.TOP_PAD !== undefined ? PG.TOP_PAD : 10) * L.scale;
+        const pigGap = (PG.GAP     !== undefined ? PG.GAP     : 10) * L.scale;
+        const pigH   = Math.round((PG.SIZE !== undefined ? PG.SIZE : 81) * L.scale);
+
+        // THE PLOT'S OWN HEIGHT, the yield figure down to the bottom of the
+        // rate label under the slot — the rate is part of the plot, and a plot
+        // measured without it would hang off the half's bottom edge. The banks
+        // are NOT in this sum: they are pinned above, and the plot is centred
+        // in the half as it always was.
         const tail  = s(P.CHARGE_RATE_GAP) + 22 * scale;
         const plotH = head + box.h + slotGap + ssz + tail;
-        const top   = B.y + Math.max(0, B.height - plotH) / 2;
+        let   top   = B.y + Math.max(0, B.height - plotH) / 2;
+
+        // PUSHED CLEAR OF THE BANKS ONLY IF THE TWO WOULD MEET. On a half with
+        // room the centred plot already starts below them and nothing moves; on
+        // a tight one it is pushed down to the row's floor — but never past the
+        // point where its own rate labels would leave the bottom edge, because
+        // a slot you cannot read costs more than a bank overlapping a figure.
+        if (pigOn) {
+            const floor = B.y + pigPad + pigH + pigGap;
+            const lowest = Math.max(B.y, B.y + B.height - plotH);
+            top = Math.min(Math.max(top, floor), lowest);
+        }
 
         // Where each plot's plant centres — its column's middle, and the one
         // line they all stand on. Held here, with the geometry that decides
@@ -681,6 +744,32 @@ class GameScene extends Phaser.Scene {
             cx: B.x + colW * (i + 0.5),
             cy: top + head + box.h / 2,
         }));
+
+        // ── THE BANKS ─────────────────────────────────────────────────────
+        // One per plot, in plot order, so piggyBanks[i] is the bank crops[i]
+        // feeds — the pairing is an index, not a search for the nearest.
+        //
+        // PULLED IN TOWARD THE CENTRE by SPREAD: each bank sits on the line
+        // between the centre column and its OWN column, a fraction of the way
+        // out. The middle one lands exactly over the middle plant (its offset
+        // from centre is nought, and any fraction of nought is nought), and the
+        // outer two end up inboard of their plants — which is what turns their
+        // flights into diagonals converging on the row. See CROPS.PIGGY.
+        this.piggyBanks = null;
+        if (pigOn) {
+            const midX   = B.x + colW * 1.5;
+            const spread = PG.SPREAD !== undefined ? PG.SPREAD : 0.25;
+            const pigY   = B.y + pigPad + pigH / 2;
+            // BY HEIGHT, keeping the art's aspect — SIZE is the bank's height
+            // because that is what the row is measured with. A width taken from
+            // the same figure would squash any bank that is not square.
+            const src  = this.textures.get('piggy_bank').get(0);
+            const pigW = src && src.height ? pigH * (src.width / src.height) : pigH;
+            this.piggyBanks = this.farmRows.map((row) =>
+                this.add.image(midX + (row.cx - midX) * spread, pigY, 'piggy_bank')
+                    .setDisplaySize(pigW, pigH)
+                    .setDepth(PG.DEPTH !== undefined ? PG.DEPTH : 7));
+        }
 
         this.stationCenterX = this.farmRows[1].cx;
         this.slotY          = this.farmRows[1].cy;
@@ -979,7 +1068,12 @@ class GameScene extends Phaser.Scene {
     }
 
     // The plant's fruit comes OFF it — the real sprite, lifting straight up at
-    // full size and full strength until it is out of sight, then gone.
+    // full size and full strength, and then away to the plot's piggy bank.
+    //
+    // TWO MOVES, NOT ONE. The lift is the harvest and it happens over the plant,
+    // where it can be read; only when it has finished does the fruit set off for
+    // the bank. One long curve from plant to bank would have no moment of
+    // "picked" in it, and the pick is the thing the tick is announcing.
     //
     // IT DETACHES. `crop.fruit` is cleared on the instant the pick lands, so the
     // plant is bare from that moment and the flying fruit is no longer part of
@@ -987,8 +1081,9 @@ class GameScene extends Phaser.Scene {
     // while this one is still on its way up — the two are different objects
     // doing different jobs, which is what a harvest actually looks like.
     //
-    // NO FADE AND NO SHRINK, deliberately. Both say "flourish". The fruit is a
-    // solid thing leaving, so it should simply go.
+    // NO FADE ON THE LIFT, deliberately — a fruit that dissolves as it leaves is
+    // a flourish. It shrinks on the SECOND leg only, going into the bank, where
+    // it is the produce getting through the slot rather than a fade-out.
     //
     // Returns whether a fruit was actually taken.
     _pickFruit(crop, last) {
@@ -1015,7 +1110,7 @@ class GameScene extends Phaser.Scene {
             y: fr.y - crop.h * (H.RISE !== undefined ? H.RISE : 1),
             duration: H.MS !== undefined ? H.MS : 420,
             ease: H.EASE || 'Sine.easeOut',
-            onComplete: () => fr.destroy(),
+            onComplete: () => this._bankFruit(fr, crop.row),
         });
 
         // AND THE PLANT IS SHAKEN BY IT. Leaves come away where the fruit was
@@ -1037,6 +1132,67 @@ class GameScene extends Phaser.Scene {
         crop.regrow = this.time.delayedCall(H.REGROW_MS !== undefined ? H.REGROW_MS : 140,
             () => { crop.regrow = null; this._newFruit(crop, true); });
         return true;
+    }
+
+    // ── Step two: into the bank ──────────────────────────────────────────────
+    // The lift has landed and the fruit is hanging over its plant. Now it goes
+    // to the bank that belongs to this plot — `row` is the index, so the pairing
+    // cannot drift: plot 0's fruit can only ever reach bank 0.
+    //
+    // NO BANK, NO SECOND LEG. If the row was never built (art missing, banks
+    // switched off) the fruit is simply destroyed where it hangs, which is
+    // exactly what a pick did before there was anywhere for it to go.
+    _bankFruit(fr, row) {
+        if (!fr || !fr.scene) return;
+        const PG  = (CONFIG.CROPS || {}).PIGGY || {};
+        const pig = this.piggyBanks && this.piggyBanks[row];
+        if (!pig || !pig.scene) { fr.destroy(); return; }
+
+        const F = PG.FLY || {};
+        // OFF THE SPRITE'S CURRENT SCALE, not off 1. The fruit is sized with
+        // setDisplaySize, so its scale is already a fraction of the frame's
+        // pixels — shrinking toward 1 would blow it up on the way to the bank.
+        const k = F.SHRINK !== undefined ? F.SHRINK : 0.42;
+        this.tweens.add({
+            targets: fr,
+            x: pig.x, y: pig.y,
+            scaleX: fr.scaleX * k, scaleY: fr.scaleY * k,
+            duration: F.MS !== undefined ? F.MS : 420,
+            // Three banks fed on the same tick should not fly in lockstep.
+            delay: (F.STAGGER_MS !== undefined ? F.STAGGER_MS : 45) * row,
+            ease: F.EASE || 'Cubic.easeIn',
+            onComplete: () => { fr.destroy(); this._popPiggy(pig); },
+        });
+    }
+
+    // The bank takes it. A short squash and back — the only acknowledgement
+    // there is, because the figure over the plant already said what was taken
+    // and the bank only has to show that it landed somewhere.
+    //
+    // FROM THE BANK'S OWN REST SCALE, captured once: picks land faster than
+    // this tween finishes, so a second one starting off a mid-pop scale would
+    // ratchet the bank bigger every time it was fed.
+    _popPiggy(pig) {
+        const P = ((CONFIG.CROPS || {}).PIGGY || {}).POP || {};
+        if (P.ENABLED === false || !pig.scene) return;
+        if (pig.restScaleX === undefined) {
+            pig.restScaleX = pig.scaleX;
+            pig.restScaleY = pig.scaleY;
+        }
+        if (pig.popTween) pig.popTween.remove();
+        const m = P.SCALE !== undefined ? P.SCALE : 1.14;
+        pig.setScale(pig.restScaleX, pig.restScaleY);
+        pig.popTween = this.tweens.add({
+            targets: pig,
+            scaleX: pig.restScaleX * m, scaleY: pig.restScaleY * m,
+            duration: P.MS !== undefined ? P.MS : 110,
+            ease: P.EASE || 'Quad.easeOut',
+            yoyo: true,
+            onComplete: () => {
+                pig.popTween = null;
+                if (pig.scene) pig.setScale(pig.restScaleX, pig.restScaleY);
+            },
+        });
     }
 
     // Put fruit on a plant. `grown` swells it up from a fraction of full size;
@@ -1660,7 +1816,7 @@ class GameScene extends Phaser.Scene {
         const batterySprite = this.add.image(p.slotX, p.slotY + yOff,
             this.assets.iconKey(batteryIconLevel));
         this.assets.dressWhenReady(batterySprite, batteryIconLevel);
-        batterySprite.setDisplaySize(this.slotBatterySize, this.slotBatterySize);
+        batterySprite.setDisplaySize(this.slotBatteryW, this.slotBatteryH);
         batterySprite.setDepth(11);
 
         const levelText = this.add.text(p.slotX, p.slotY + yOff + tOff, `LVL ${level}`, {
@@ -1895,7 +2051,7 @@ class GameScene extends Phaser.Scene {
         // a picture downloads.
         const battery = this.add.image(cell.x, cell.y + this.batteryYOffset,
                 this.assets.iconKey(iconLvl))
-            .setDisplaySize(this.batteryDisplaySize, this.batteryDisplaySize)
+            .setDisplaySize(this.batteryDisplayW, this.batteryDisplayH)
             .setDepth(11);
         this.assets.dressWhenReady(battery, iconLvl);
 
@@ -1923,9 +2079,11 @@ class GameScene extends Phaser.Scene {
     }
 
     playSpawnAnimation(bd) {
-        const base = this.batteryDisplaySize;
+        // The icon is no longer square, so the squash and stretch has to run
+        // off its two sides separately rather than one figure for both.
+        const bw = bd.sprite.displayWidth, bh = bd.sprite.displayHeight;
         const a    = CONFIG.SPAWN_ANIMATION;
-        bd.sprite.setDisplaySize(base * a.INITIAL_SCALE_X, base * a.INITIAL_SCALE_Y);
+        bd.sprite.setDisplaySize(bw * a.INITIAL_SCALE_X, bh * a.INITIAL_SCALE_Y);
         bd.levelText.setScale(a.INITIAL_SCALE_X, a.INITIAL_SCALE_Y);
         const seq = [
             [a.STRETCH_SCALE_X, a.STRETCH_SCALE_Y, a.STRETCH_DURATION],
@@ -1937,7 +2095,7 @@ class GameScene extends Phaser.Scene {
             chain = chain.then(() => new Promise(res => {
                 this.tweens.add({
                     targets: bd.sprite,
-                    displayWidth: base * sx, displayHeight: base * sy,
+                    displayWidth: bw * sx, displayHeight: bh * sy,
                     duration: dur, ease: 'Cubic.easeOut', onComplete: res,
                 });
                 this.tweens.add({

@@ -73,10 +73,13 @@ var BATTERY_TYPES_RESERVE = [
     { name: 'Rat', count: 3 },
 ];
 var BATTERY_TYPES = [
-{ name: 'Battery', count: 3 },        // 1
-{ name: 'Star', count: 3 },           // 2
-{ name: 'Shield', count: 3 },         // 3
-{ name: 'Fire', count: 3 },           // 4
+// THE HARVEST SCISSORS — levels 1-10. Ten icons rather than the usual three to
+// a type, and they live in graphics/scissor as zero-padded PNGs, so this entry
+// carries its own folder, extension and padding (see LEVEL_TO_BATTERY_INFO).
+// They take over exactly ten levels — what Battery, Star, Shield and fire_1
+// held — so every type below keeps the level it already had.
+{ name: 'Scissor', count: 10, folder: 'scissor', ext: 'png', pad: 2 },  // 1  (levels 1-10)
+{ name: 'Fire', count: 2, startAt: 2 },  // 2  (fire_1 went to the scissors)
 { name: 'Jug', count: 3 },            // 5
 { name: 'Apple', count: 3 },          // 6
 { name: 'Mango', count: 3 },          // 7
@@ -223,11 +226,15 @@ var LEVEL_TO_BATTERY_INFO = {};
 (function() {
     let currentLevel = 1;
     BATTERY_TYPES.forEach((batteryType, index) => {
-        for (let i = 1; i <= batteryType.count; i++) {
+        const firstPosition = batteryType.startAt || 1;
+        for (let i = 0; i < batteryType.count; i++) {
             LEVEL_TO_BATTERY_INFO[currentLevel] = {
                 name: batteryType.name,
-                position: i,
-                typeIndex: index + 1
+                position: firstPosition + i,
+                typeIndex: index + 1,
+                folder: batteryType.folder || 'battery',
+                ext: batteryType.ext || 'webp',
+                pad: batteryType.pad || 0
             };
             currentLevel++;
         }
@@ -250,26 +257,40 @@ function getBatteryDisplayName(level) {
     return info ? info.name : `Battery ${level}`;
 }
 
+// Name → file stem: lion, position 2, no padding → lion_2; scissor, position 2,
+// padded to two digits → scissor_02.
+function batteryFileStem(info) {
+    const fileBase = displayNameToFileBase(info.name);
+    const n = info.pad ? String(info.position).padStart(info.pad, '0')
+                       : String(info.position);
+    return `${fileBase}_${n}`;
+}
+
 // Get battery file name by level (auto-generated from display name)
 function getBatteryFileName(level) {
     const info = getBatteryInfo(level);
-    if (!info) return `battery_${level}.png`;
-    
-    const fileBase = displayNameToFileBase(info.name);
-    return `${fileBase}_${info.position}.png`;
+    if (!info) return `battery_${level}.webp`;
+    return `${batteryFileStem(info)}.${info.ext}`;
 }
 
-// Get battery data by level (returns object with fileName and displayName)
+// Get battery data by level. `path` is what the loaders want — the folder is
+// per type now (the scissors are not in graphics/battery), so nobody outside
+// here should be gluing a folder onto fileName.
 function getBatteryData(level) {
     const info = getBatteryInfo(level);
     if (!info) {
-        return { fileName: `battery_${level}.webp`, displayName: `Battery ${level}` };
+        const fileName = `battery_${level}.webp`;
+        return { fileName, folder: 'battery', path: `graphics/battery/${fileName}`,
+                 displayName: `Battery ${level}` };
     }
-    
-    const displayName = info.name;
-    const fileBase = displayNameToFileBase(info.name);
-    const fileName = `${fileBase}_${info.position}.webp`;
-    return { fileName, displayName };
+
+    const fileName = `${batteryFileStem(info)}.${info.ext}`;
+    return {
+        fileName,
+        folder: info.folder,
+        path: `graphics/${info.folder}/${fileName}`,
+        displayName: info.name
+    };
 }
 
 // Get charge value for a battery level

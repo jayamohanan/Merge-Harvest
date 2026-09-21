@@ -293,14 +293,35 @@ var CONFIG = {
                                        // 0.5 = blown up 2× → coarser grain
         },
         // LANDSCAPE / DESKTOP figures. A 64px battery in a 130px cell, with the
-        // label parked 40px above it — sized by eye against a big screen, where
-        // there is room to spare and the cell can breathe.
+        // label parked 40px BELOW it — sized by eye against a big screen, where
+        // there is room to spare and the cell can breathe. The label sits under
+        // the tool because a pair of scissors reads from its handles down, and
+        // a number over the blades was landing in the middle of the art.
+        // ── THE ICON'S SHARE OF THE CELL ────────────────────────────────
+        // The cell is padded, the label takes its share of the BOTTOM, and the
+        // icon takes everything that is left, with its top edge hard against
+        // the top padding line.
+        //
+        // Both orientations derive it now. The authored figures just below were
+        // measured against a desktop cell with room to spare, and left a 64px
+        // icon adrift in the middle of a 130px cell with air all round it —
+        // fine for a thin tool standing on its own, wrong for a character that
+        // is meant to fill its cell. Set this false to go back to them
+        // (landscape only: portrait has always derived — see MOBILE).
+        FIT_TO_CELL: true,
+        // The art's own WIDTH / HEIGHT. The icon is fitted inside the space
+        // above the label at this ratio so it is never stretched to reach an
+        // edge: 1 for a square canvas, >1 for art wider than it is tall. A
+        // character with the tool held out to one side is usually wider than
+        // square — measure the file rather than guessing, because too large a
+        // number here shrinks the icon to fit a width it does not need.
+        ICON_ASPECT: 1,
         BATTERY_DISPLAY_SIZE: 64,
         BATTERY_SCALE: 1.0,
         BATTERY_Y_OFFSET: 5,
         LEVEL_TEXT_SIZE: '11px',
         LEVEL_TEXT_COLOR: '#000000',
-        LEVEL_TEXT_Y_OFFSET: -40,
+        LEVEL_TEXT_Y_OFFSET: 40,   // + is BELOW the icon
 
         // ── PORTRAIT: FILL THE CELL ─────────────────────────────────────────
         // The same figures on a phone are a battery half the width of its cell
@@ -821,6 +842,89 @@ var CONFIG = {
             POP_EASE: 'Back.easeOut',
         },
 
+        // ── THE PIGGY BANKS ─────────────────────────────────────────────────
+        // Three of them in a row ABOVE the field, and every fruit a plant gives
+        // up ends inside the one that belongs to its plot: left plant to left
+        // bank, middle to middle, right to right.
+        //
+        // WHY THEY ARE PULLED IN TOWARD THE CENTRE. Sat directly over their own
+        // plants the three flights would be three identical straight lines, and
+        // a straight line up reads as the fruit simply leaving — which is what
+        // it did before there was anywhere for it to go. Closing the row up
+        // (SPREAD below 1) turns the outer two into diagonals: the left plant
+        // throws up and to the RIGHT, the right plant up and to the LEFT, and
+        // the middle one straight up. Three lines converging on one place is
+        // what says the field is feeding something.
+        //
+        // THEY ARE FURNITURE, NOT PART OF THE PLOT. The row hangs off the TOP
+        // EDGE of the farm half on TOP_PAD, the way a coin counter does, so it
+        // keeps one line whatever crop is in the field and however tall the half
+        // is. The plants stay centred in the half below and are only pushed down
+        // if the two would actually meet — see createSlots.
+        PIGGY: {
+            ENABLED: true,
+            SIZE:  81,      // the bank's HEIGHT in design px; width follows the
+                            // art's own aspect, so a bank that is not square is
+                            // not squashed into a square
+            TOP_PAD: 10,    // from the half's top edge — which is the screen's,
+                            // in both orientations (px @ design)
+            GAP:   10,      // the clearance kept under the row: the plot is
+                            // pushed below this if it would otherwise reach up
+                            // into the banks (px @ design)
+            // HOW FAR THE OUTER TWO SIT FROM THE CENTRE, as a fraction of how
+            // far their PLANTS sit from it. 1 puts each bank directly over its
+            // own plant (three vertical flights, no convergence); 0 stacks all
+            // three on the centre line. Around half is the useful range: the
+            // pairing is still obvious — the nearest bank to a plant is its own
+            // — while the outer flights are clearly diagonal.
+            //
+            // IT IS A CENTRE-TO-CENTRE FIGURE, so it does not know how wide the
+            // banks are: tightening it after SIZE went up by half ran the three
+            // of them into each other. Spread and size have to be tuned as a
+            // pair — if SIZE rises again, this has to come up with it.
+            SPREAD: 0.5,
+            DEPTH:  7,      // OVER the flying fruit (CROPS.DEPTH.PICKED = 6), so
+                            // produce vanishes INTO the bank rather than on top
+                            // of it, and under the yield figures (8)
+
+            // ── THE SECOND STEP ─────────────────────────────────────────────
+            // A pick is two moves now, not one. The fruit still lifts off the
+            // plant exactly as it did (CROPS.PICK.RISE/MS/EASE) — that beat is
+            // the harvest, and it happens over the plant where it can be read.
+            // Only when that has finished does it set off for its bank.
+            //
+            // Splitting them is the whole point: one long curve from plant to
+            // bank has no moment of "picked" in it, and the pick is the thing
+            // the tick is announcing. Lift, hang, then go.
+            FLY: {
+                MS:   420,
+                // ACCELERATING AWAY. The fruit is at rest at the top of its lift
+                // and has to start moving from there; easing IN means it creeps
+                // off, gathers pace and arrives fast, which is what being drawn
+                // to something looks like. Ease out would have it shoot off and
+                // coast, which reads as thrown.
+                EASE: 'Cubic.easeIn',
+                // It shrinks on the way, to a fraction of the size it left at —
+                // partly distance, mostly so a full-sized tomato does not have
+                // to fit through the slot of a bank half its width.
+                SHRINK: 0.42,
+                // Stagger, so three banks fed on the same tick are not three
+                // identical flights in lockstep. Multiplied by the plot index.
+                STAGGER_MS: 45,
+            },
+
+            // ── THE BANK TAKES IT ───────────────────────────────────────────
+            // A short squash on arrival. This is the only acknowledgement there
+            // is — the figure over the plant already said what was taken, so the
+            // bank only has to show that it landed somewhere.
+            POP: {
+                ENABLED: true,
+                SCALE: 1.14,
+                MS:     110,
+                EASE: 'Quad.easeOut',
+            },
+        },
+
         // ── THE LEAVES A PICK THROWS ────────────────────────────────────────
         // A handful of small green leaves burst out of the canopy on every
         // pick and fall away past the plant. The fruit leaving says WHAT was
@@ -888,7 +992,7 @@ async function initBatteryImagePaths() {
     for (let level = 1; level <= highestLevel; level++) {
         const batteryData = getBatteryData(level);
         if (!batteryData) continue;
-        BATTERY_IMAGE_PATHS[level] = `graphics/battery/${batteryData.fileName}`;
+        BATTERY_IMAGE_PATHS[level] = batteryData.path;
     }
     
     if (CONFIG.DEBUG_LAYOUT) console.log(`Registered ${Object.keys(BATTERY_IMAGE_PATHS).length} battery sprites`);
@@ -912,7 +1016,7 @@ function getBatteryIconLevel(level) {
 // Grid & Batteries:
 //   • Grid cell (empty/filled):        130 × 130 px  (CELL.SIZE)
 //   • Battery sprite in grid cell:      64 × 64 px   (CELL.BATTERY_DISPLAY_SIZE)
-//   • Battery level text offset:        -40 px Y     (CELL.LEVEL_TEXT_Y_OFFSET)
+//   • Battery level text offset:        +40 px Y     (CELL.LEVEL_TEXT_Y_OFFSET, below icon)
 //
 // Platform/Charger System:
 //   • Charger slot (battery holder):   130 × 130 px  (PLATFORM.SLOT_SIZE) — same as grid cell

@@ -39,8 +39,10 @@ function sharedAssets() {
     const A = assetList();
 
     const startData = getBatteryData(CONFIG.BATTERY_START_LEVEL);
-    if (startData) A.image(`battery${CONFIG.BATTERY_START_LEVEL}`, `graphics/battery/${startData.fileName}`);
+    if (startData) A.image(`battery${CONFIG.BATTERY_START_LEVEL}`, startData.path);
     A.image('coin',       'graphics/ui/merge-grid/coin.png');
+    // Where the harvest goes — three of them over the field, one per plot.
+    A.image('piggy_bank', 'graphics/ui/piggy_bank.png');
     A.image('point',      'graphics/ui/merge-grid/point.png');
     A.image('button',     'graphics/ui/merge-grid/spawn_button3.png');
     // Grain for the cell faces: neutral grey + blurred noise, blended over the
