@@ -483,10 +483,13 @@ var CONFIG = {
         PUNCH_MS: 110,                 // as each coin lands
 
         // ── THE SHOWER ───────────────────────────────────────────────────────
-        // Coins appear across the WHOLE screen, the merge grid included, then
-        // sweep to the counter — the motion goes where the eyes already are. A
-        // payout that happens only over the farm is one a merging player never
-        // sees. ENABLED false falls back to a burst from the farmer who paid.
+        // Coins are THROWN OUT from wherever the payout happened — the bank
+        // that just burst, most of the time — to scattered spots across the
+        // WHOLE screen, the merge grid included, then swept to the counter.
+        // The motion goes where the eyes already are, and it starts from where
+        // the coins were actually earned rather than blinking into existence
+        // at random. ENABLED false falls back to a burst from the farmer who
+        // paid.
         //
         // Nothing here can be touched, so a drag runs straight through it.
         SCATTER: {
@@ -498,8 +501,15 @@ var CONFIG = {
                                 // fall over the panel and the grid
             AVOID_POINTER: 90,  // px @ design scale kept clear of a finger that
                                 // is mid-drag
-            POP_MS:      180,   // each coin's arrival
-            POP_STAGGER: 22,    // between arrivals, so it rains rather than blinks
+            OUT_MS:      180,   // how long the throw from the source to its
+                                // landing spot takes — QUICK, on purpose: this
+                                // is a coin leaving the bank, not one falling
+                                // out of the sky
+            POP_MS:      180,   // falls back for OUT_MS if that is unset, and
+                                // still the duration used on any older caller
+                                // that never gave a source to throw coins FROM
+            POP_STAGGER: 22,    // between one coin's throw and the next, so it
+                                // sprays rather than leaving all at once
             SWEEP_MS:    520,   // the run to the counter
             STAGGER:     26,
         },
@@ -560,6 +570,13 @@ var CONFIG = {
             // because the plot's height belongs to the plant: the slot is the
             // short thing standing under it.
             SLOT_FRAC: 0.62,
+            // HOW FAR THE PLOT'S FLOOR SITS OFF THE HALF'S BOTTOM EDGE (px @
+            // design). The plot used to be centred in whatever the piggy banks
+            // left below them; now it is pinned low instead — a decent gap
+            // under the rate label so the last slot never reads as flush
+            // against the edge, but no longer free to drift up the half when
+            // there is room to spare.
+            BOTTOM_PAD: 56,
         },
 
         // Battery icons pulse once per charge tick.
@@ -866,7 +883,7 @@ var CONFIG = {
             SIZE:  81,      // the bank's HEIGHT in design px; width follows the
                             // art's own aspect, so a bank that is not square is
                             // not squashed into a square
-            TOP_PAD: 10,    // from the half's top edge — which is the screen's,
+            TOP_PAD: 15,    // from the half's top edge — which is the screen's,
                             // in both orientations (px @ design)
             GAP:   10,      // the clearance kept under the row: the plot is
                             // pushed below this if it would otherwise reach up
@@ -922,6 +939,47 @@ var CONFIG = {
                 SCALE: 1.14,
                 MS:     110,
                 EASE: 'Quad.easeOut',
+            },
+
+            // ── THE PAYOUT ───────────────────────────────────────────────────
+            // What a plant is WORTH once it is stripped for good, in coins. Off
+            // the plant's own TOTAL yield — the figure it started the level
+            // holding — rather than a new number invented for this: the yield
+            // table (cropData.js) is already tuned so it climbs with the level,
+            // and a payout that rides the same curve needs nothing of its own to
+            // keep in step as more levels are authored. MULT is the one knob if
+            // the coin economy ever needs to move independently of it.
+            PAYOUT_MULT: 1,
+
+            // ── THE BANK GOING OFF ───────────────────────────────────────────
+            // A plant fully stripped empties its bank: a beat of visible strain,
+            // then it bursts and is gone, and what it held scatters as coins —
+            // see _explodePiggy. No sprite of its own; the bank's own art does
+            // the whole thing on a tween.
+            EXPLODE: {
+                ENABLED: true,
+                // THE TENSION. A squeeze-and-swell, tighter each time, so it
+                // reads as building rather than as one pulse repeated — WIND_UP
+                // is how many extra cycles it takes past the first before it
+                // goes. Position wobbles a couple of px in time with it: a bank
+                // under strain trembles, it does not glide.
+                //
+                // HALVED FROM THE FIRST PASS (was 0.90 / 1.12 / 3px): at the
+                // full swing it read as bobbing in place rather than straining
+                // — closer to floating than to something about to go.
+                SQUEEZE: 0.95,     // scale at the bottom of a squeeze
+                SWELL:   1.06,     // scale at the top, just before it goes
+                CYCLE_MS: 110,     // one squeeze-to-swell, one way
+                WIND_UP:  2,       // extra cycles before the final one bursts
+                JITTER:   1.5,     // px @ design, the trembling
+                // THE BURST. Past SWELL, one fast lunge further out while it
+                // fades — an explosion overshoots outward, it does not shrink
+                // to nothing — and then it is simply gone: hidden, not
+                // destroyed, so the same sprite is there, at rest, the next time
+                // this plot grows a plant worth bursting for.
+                BURST_SCALE: 1.275,   // halved from 1.55 (extra scale 0.55 → 0.275)
+                BURST_MS:     140,
+                BURST_EASE: 'Quad.easeIn',
             },
         },
 

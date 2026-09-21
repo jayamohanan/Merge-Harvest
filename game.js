@@ -720,17 +720,20 @@ class GameScene extends Phaser.Scene {
         // THE PLOT'S OWN HEIGHT, the yield figure down to the bottom of the
         // rate label under the slot — the rate is part of the plot, and a plot
         // measured without it would hang off the half's bottom edge. The banks
-        // are NOT in this sum: they are pinned above, and the plot is centred
-        // in the half as it always was.
-        const tail  = s(P.CHARGE_RATE_GAP) + 22 * scale;
-        const plotH = head + box.h + slotGap + ssz + tail;
-        let   top   = B.y + Math.max(0, B.height - plotH) / 2;
+        // are NOT in this sum: they are pinned above, and the plot is pinned
+        // low, near the half's bottom edge, rather than centred in what is left
+        // under them.
+        const tail    = s(P.CHARGE_RATE_GAP) + 22 * scale;
+        const plotH   = head + box.h + slotGap + ssz + tail;
+        const bottomPad = s(FS.BOTTOM_PAD !== undefined ? FS.BOTTOM_PAD : 28);
+        let   top     = B.y + Math.max(0, B.height - plotH - bottomPad);
 
-        // PUSHED CLEAR OF THE BANKS ONLY IF THE TWO WOULD MEET. On a half with
-        // room the centred plot already starts below them and nothing moves; on
-        // a tight one it is pushed down to the row's floor — but never past the
-        // point where its own rate labels would leave the bottom edge, because
-        // a slot you cannot read costs more than a bank overlapping a figure.
+        // PUSHED CLEAR OF THE BANKS ONLY IF THE TWO WOULD MEET. Low against the
+        // bottom edge there is normally plenty of room below the row; on a half
+        // too short for both, the plot is pushed down to the row's floor
+        // instead — but never past the point where its own rate labels would
+        // leave the bottom edge, because a slot you cannot read costs more than
+        // a bank overlapping a figure.
         if (pigOn) {
             const floor = B.y + pigPad + pigH + pigGap;
             const lowest = Math.max(B.y, B.y + B.height - plotH);
@@ -949,6 +952,20 @@ class GameScene extends Phaser.Scene {
         // come out in a different order than the table reads.
         const yields = cropValuesFor(lvl);
 
+        // EVERY BANK BACK AT REST. A plot whose last plant was stripped left
+        // its bank hidden mid-burst (see _explodePiggy) — the plant now growing
+        // in has a full yield again, so the bank that will hold it needs to be
+        // standing and visible too. Harmless on the first build of all: a bank
+        // nothing has ever burst is already at rest, and this simply confirms it.
+        for (const pig of this.piggyBanks || []) {
+            if (!pig || !pig.scene) continue;
+            this.tweens.killTweensOf(pig);
+            if (pig.popTween) { pig.popTween.remove(); pig.popTween = null; }
+            const rx = pig.restScaleX !== undefined ? pig.restScaleX : pig.scaleX;
+            const ry = pig.restScaleY !== undefined ? pig.restScaleY : pig.scaleY;
+            pig.setScale(rx, ry).setAlpha(1).setVisible(true);
+        }
+
         this.crops = this.farmRows.map((row, i) => {
             // ON THE BOX'S FLOOR, not centred in it. A plant stands on ground,
             // so a crop that does not fill the box's height should be short at
@@ -1063,8 +1080,15 @@ class GameScene extends Phaser.Scene {
         }
 
         const last = crop.left <= 0;
-        this._pickFruit(crop, last);
-        if (last) this._spendCrop(crop);
+        const picked = this._pickFruit(crop, last);
+        if (last) {
+            this._spendCrop(crop);
+            // NOTHING TO ANIMATE INTO THE BANK. The figure still owes its
+            // payout — see _spendCrop/_explodePiggy — but there is no fruit to
+            // wait on, so it is cashed out at once rather than blocked on a
+            // flight that was never going to happen.
+            if (!picked) this._explodePiggy(crop, () => this._cropFullyBanked(crop));
+        }
     }
 
     // The plant's fruit comes OFF it — the real sprite, lifting straight up at
@@ -1110,7 +1134,10 @@ class GameScene extends Phaser.Scene {
             y: fr.y - crop.h * (H.RISE !== undefined ? H.RISE : 1),
             duration: H.MS !== undefined ? H.MS : 420,
             ease: H.EASE || 'Sine.easeOut',
-            onComplete: () => this._bankFruit(fr, crop.row),
+            // `last` rides along to the bank: the explosion must not begin
+            // until THIS fruit — the one that stripped the plant — has
+            // actually landed in it. See _bankFruit.
+            onComplete: () => this._bankFruit(fr, crop, last),
         });
 
         // AND THE PLANT IS SHAKEN BY IT. Leaves come away where the fruit was
@@ -1141,12 +1168,19 @@ class GameScene extends Phaser.Scene {
     //
     // NO BANK, NO SECOND LEG. If the row was never built (art missing, banks
     // switched off) the fruit is simply destroyed where it hangs, which is
-    // exactly what a pick did before there was anywhere for it to go.
-    _bankFruit(fr, row) {
+    // exactly what a pick did before there was anywhere for it to go — but a
+    // LAST fruit still has to cash its plant out and clear the way for the
+    // level to turn over, bank or no bank.
+    _bankFruit(fr, crop, last) {
         if (!fr || !fr.scene) return;
+        const row = crop.row;
         const PG  = (CONFIG.CROPS || {}).PIGGY || {};
         const pig = this.piggyBanks && this.piggyBanks[row];
-        if (!pig || !pig.scene) { fr.destroy(); return; }
+        if (!pig || !pig.scene) {
+            fr.destroy();
+            if (last) this._explodePiggy(crop, () => this._cropFullyBanked(crop));
+            return;
+        }
 
         const F = PG.FLY || {};
         // OFF THE SPRITE'S CURRENT SCALE, not off 1. The fruit is sized with
@@ -1161,7 +1195,16 @@ class GameScene extends Phaser.Scene {
             // Three banks fed on the same tick should not fly in lockstep.
             delay: (F.STAGGER_MS !== undefined ? F.STAGGER_MS : 45) * row,
             ease: F.EASE || 'Cubic.easeIn',
-            onComplete: () => { fr.destroy(); this._popPiggy(pig); },
+            onComplete: () => {
+                fr.destroy();
+                // ONLY THE FRUIT THAT STRIPPED THE PLANT sets the bank off. It
+                // has to actually be sitting in the bank first — this is that
+                // moment — so the explosion is never seen starting before the
+                // thing it is cashing in has arrived, not even on a plant spent
+                // in its very first pick.
+                if (last) this._explodePiggy(crop, () => this._cropFullyBanked(crop));
+                else this._popPiggy(pig);
+            },
         });
     }
 
@@ -1446,9 +1489,127 @@ class GameScene extends Phaser.Scene {
             });
         }
 
-        // THE LAST PLANT OF THE LEVEL TURNS IT OVER. Asked here rather than on a
-        // timer, because this is the only moment the answer can change.
+        // THE BANK AND THE LEVEL TURN ARE NOT DECIDED HERE. Both wait on the
+        // fruit that just left actually landing in the bank — see _bankFruit,
+        // which fires _explodePiggy once it has, and _cropFullyBanked, which is
+        // the only place that checks whether the level is over. Asking here
+        // instead would turn the level while that last fruit was still in the
+        // air over the plant.
+    }
+
+    // The one place that decides a level is over. Called once a crop's payout
+    // has actually finished — the bank has taken its last fruit, burst, and
+    // every coin it threw has reached the counter — never earlier, so a level
+    // can never turn while the field still has an animation running on it.
+    _cropFullyBanked(crop) {
         if ((this.crops || []).every((c) => c.done)) this._advanceCropLevel();
+    }
+
+    // ── The bank goes off ────────────────────────────────────────────────────
+    // A plant fully stripped empties its bank: a beat of visible strain — the
+    // bank squeezing and swelling, winding tighter — and then it bursts, and
+    // what it held scatters across the screen as coins and sweeps to the
+    // counter. It is the same _pickFruit → _bankFruit did all level, cashed in
+    // at once rather than doled out one flight at a time.
+    //
+    // ONE SPRITE, REUSED. Nothing is spawned for the explosion itself — the
+    // bank's own image is tweened through the strain and the burst, then
+    // hidden rather than destroyed, so it is simply sitting there at rest the
+    // next time this plot's plant is worth bursting it for (see buildCrops,
+    // where every bank is put back to rest on a level turn).
+    // `onComplete` fires once the coins this cashes in have actually reached
+    // the counter — it is how _cropFullyBanked knows the level is safe to
+    // turn over, so every exit from this function has to call it eventually.
+    _explodePiggy(crop, onComplete) {
+        const PG = (CONFIG.CROPS || {}).PIGGY || {};
+        if (PG.ENABLED === false) { if (onComplete) onComplete(); return; }
+        const amount = Math.max(1, Math.round(
+            (crop.total || 0) * (PG.PAYOUT_MULT !== undefined ? PG.PAYOUT_MULT : 1)));
+
+        const pig = this.piggyBanks && this.piggyBanks[crop.row];
+        const E   = PG.EXPLODE || {};
+        if (E.ENABLED === false || !pig || !pig.scene) {
+            // No bank to burst — the coins this plant paid out are still
+            // earned. Thrown from the plant's own spot rather than lost.
+            this.animateCoinReward(crop.cx, crop.cy, amount, 0, null, onComplete);
+            return;
+        }
+
+        // ITS REST STATE, CAPTURED ONCE. Every squeeze and swell below is
+        // measured off this, never off whatever scale the last tween left it
+        // at, so a bank that goes off is always winding up from the same place.
+        if (pig.restScaleX === undefined) {
+            pig.restScaleX = pig.scaleX;
+            pig.restScaleY = pig.scaleY;
+        }
+        this.tweens.killTweensOf(pig);
+        if (pig.popTween) { pig.popTween.remove(); pig.popTween = null; }
+        const rx = pig.restScaleX, ry = pig.restScaleY;
+        const ox = pig.x, oy = pig.y;
+        pig.setScale(rx, ry).setPosition(ox, oy).setAlpha(1).setVisible(true);
+
+        const lo    = E.SQUEEZE !== undefined ? E.SQUEEZE : 0.90;
+        const hi    = E.SWELL   !== undefined ? E.SWELL   : 1.12;
+        const cycle = E.CYCLE_MS !== undefined ? E.CYCLE_MS : 110;
+        const winds = Math.max(0, E.WIND_UP !== undefined ? E.WIND_UP : 2);
+        const jit   = E.JITTER !== undefined ? E.JITTER : 3;
+
+        // THE TENSION, one squeeze-to-swell per cycle, TIGHTER EACH TIME: cycle
+        // i pulls the low and high a little further from rest than the last, so
+        // it reads as building rather than one pulse simply repeated. It
+        // trembles as it winds — a couple of px of jitter, flipped every cycle
+        // — because a thing under strain shakes, it does not glide.
+        const cycles = winds + 1;
+        const squeezeStep = (i) => {
+            if (!pig.scene) return;
+            const grow = (i + 1) / cycles;               // 0 < grow ≤ 1
+            const s0 = rx - (rx - rx * lo) * grow, s0y = ry - (ry - ry * lo) * grow;
+            const s1 = rx + (rx * hi - rx) * grow, s1y = ry + (ry * hi - ry) * grow;
+            const dx = (i % 2 === 0 ? -1 : 1) * jit;
+            this.tweens.add({
+                targets: pig,
+                scaleX: s0, scaleY: s0y, x: ox + dx,
+                duration: cycle, ease: 'Sine.easeIn',
+                onComplete: () => {
+                    if (!pig.scene) return;
+                    this.tweens.add({
+                        targets: pig,
+                        scaleX: s1, scaleY: s1y, x: ox - dx,
+                        duration: cycle, ease: 'Sine.easeOut',
+                        onComplete: () => {
+                            if (i + 1 < cycles) squeezeStep(i + 1);
+                            else burst();
+                        },
+                    });
+                },
+            });
+        };
+
+        // THE BURST. One fast lunge past SWELL, no fade — an explosion
+        // overshoots outward, it does not shrink to nothing — and then it is
+        // simply gone at the end of the scale. Hidden, not destroyed: put back to rest here so it is
+        // ready standing rather than needing a reset found later.
+        const burst = () => {
+            if (!pig.scene) return;
+            pig.setPosition(ox, oy);
+            this.tweens.add({
+                targets: pig,
+                scaleX: rx * (E.BURST_SCALE !== undefined ? E.BURST_SCALE : 1.55),
+                scaleY: ry * (E.BURST_SCALE !== undefined ? E.BURST_SCALE : 1.55),
+                duration: E.BURST_MS !== undefined ? E.BURST_MS : 140,
+                ease: E.BURST_EASE || 'Quad.easeIn',
+                onComplete: () => {
+                    if (pig.scene) pig.setVisible(false).setScale(rx, ry).setAlpha(1);
+                    // THE COINS. Scattered across the whole screen — the merge
+                    // grid included — then swept to the counter; this is the
+                    // very shower animateCoinReward already throws for any
+                    // payout, called from where the bank stood.
+                    this.animateCoinReward(ox, oy, amount, 0, null, onComplete);
+                },
+            });
+        };
+
+        squeezeStep(0);
     }
 
     // ── The next level ───────────────────────────────────────────────────────
@@ -2885,7 +3046,7 @@ class GameScene extends Phaser.Scene {
         this.updateSpawnButton();
     }
 
-    animateCoinReward(startX, startY, amount, delayBeforeFly = 0, platform = null) {
+    animateCoinReward(startX, startY, amount, delayBeforeFly = 0, platform = null, onComplete = null) {
         const C   = CONFIG.COIN_REWARD_ANIMATION;
         // No counter on screen, no flight — but the coins are still earned. This
         // is called at every level end now, so it must not be able to take the
@@ -2893,6 +3054,7 @@ class GameScene extends Phaser.Scene {
         if (!this.coinIcon || !this.coinIcon.scene) {
             this.coins += amount;
             if (this.coinText) this.updateCoinDisplay();
+            if (onComplete) onComplete();
             return;
         }
         const tX  = this.coinIcon.x, tY = this.coinIcon.y;
@@ -2918,6 +3080,10 @@ class GameScene extends Phaser.Scene {
                       : (C.BURST_RADIUS !== undefined ? C.BURST_RADIUS : 55) * L.scale;
         const popMs   = S.POP_MS !== undefined ? S.POP_MS : 180;
         const popGap  = S.POP_STAGGER !== undefined ? S.POP_STAGGER : 22;
+        // How long a coin's THROW OUT of the bank takes — S.OUT_MS if it is
+        // set, popMs (the old "arrival pop" duration) otherwise, so an unedited
+        // config keeps the same pacing it always had.
+        const outMs   = S.OUT_MS !== undefined ? S.OUT_MS : popMs;
         // Somewhere on screen to fall: mostly over the farm, the rest over the
         // panel, and never on top of a finger that is mid-drag.
         const spot = () => {
@@ -2935,20 +3101,40 @@ class GameScene extends Phaser.Scene {
 
         const coins = [];
         for (let i = 0; i < n; i++) {
-            const at = scatter ? spot()
-                               : { x: startX, y: startY - i * C.INITIAL_STACK_OFFSET };
+            if (scatter) {
+                // OUT OF WHERE IT WAS EARNED, QUICKLY — a coin does not simply
+                // appear where it lands; it is thrown there from startX/startY
+                // (the bank that just went off, or whatever paid out), a moment
+                // after the last one so the screen RAINS across it rather than
+                // blinking every coin on at once.
+                const to = spot();
+                const coin = this.add.image(startX, startY, 'coin')
+                    .setDisplaySize(size, size)
+                    .setDepth(100 + i)
+                    .setAlpha(0);
+                coins.push(coin);
+                const sx = coin.scaleX, sy = coin.scaleY;
+                coin.setScale(sx * 0.4, sy * 0.4);
+                // STRAIGHT THERE AND STOPPED — no overshoot. Back.easeOut
+                // sails past x/y before springing back, which on a COIN'S
+                // POSITION reads as it swinging around where it landed; a coin
+                // has to sit dead still once it arrives; the only motion left
+                // in it after this is the later sweep to the counter.
+                this.tweens.add({
+                    targets: coin, x: to.x, y: to.y,
+                    scaleX: sx, scaleY: sy, alpha: 1,
+                    delay: i * popGap,
+                    duration: outMs,
+                    ease: 'Cubic.easeOut',
+                });
+                continue;
+            }
+            const at = { x: startX, y: startY - i * C.INITIAL_STACK_OFFSET };
             const coin = this.add.image(at.x, at.y, 'coin')
                 .setDisplaySize(size, size)
                 .setDepth(100 + i);
             coins.push(coin);
-            if (scatter) {
-                // Each pops in where it fell, a moment after the last, so the
-                // screen RAINS coins rather than blinking them all on at once.
-                const sx = coin.scaleX, sy = coin.scaleY;
-                coin.setScale(sx * 0.2, sy * 0.2).setAlpha(0);
-                this.tweens.add({ targets: coin, scaleX: sx, scaleY: sy, alpha: 1,
-                    delay: i * popGap, duration: popMs, ease: 'Back.easeOut' });
-            } else if (burst > 0) {
+            if (burst > 0) {
                 // The single-source version: thrown out and up, each its own way.
                 const a2 = (i / n) * Math.PI * 2 + Math.random() * 0.6;
                 const r2 = burst * (0.45 + Math.random() * 0.55);
@@ -2964,7 +3150,7 @@ class GameScene extends Phaser.Scene {
 
         // Then in, one after another, to the counter. Quick: the sweep crosses
         // the board, so it must not linger over it.
-        const settle = scatter ? popMs + n * popGap
+        const settle = scatter ? outMs + n * popGap
                                : (C.BURST_MS !== undefined ? C.BURST_MS : 260);
         const flyMs  = scatter ? (S.SWEEP_MS !== undefined ? S.SWEEP_MS : 520)
                                : C.TOP_SPEED_DURATION;
@@ -2990,6 +3176,7 @@ class GameScene extends Phaser.Scene {
                                 this.updateCoinDisplay();
                                 // Mark coin animation complete for this platform
                                 if (platform) platform.coinAnimationComplete = true;
+                                if (onComplete) onComplete();
                             }
                         },
                     });
