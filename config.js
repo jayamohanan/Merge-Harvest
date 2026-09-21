@@ -370,7 +370,7 @@ var CONFIG = {
                                        // so this is real padding around the cells
                                        // rather than the old art's baked margin
         GRID_PANEL_COLOR: "#ccd5d7",
-        GRID_PANEL_RADIUS: 15,
+        GRID_PANEL_RADIUS: 0,          // sharp corners
         GRID_PANEL_BORDER_COLOR: "#364549",
         GRID_PANEL_BORDER_WIDTH: 3,
     },
@@ -511,7 +511,10 @@ var CONFIG = {
             POP_STAGGER: 22,    // between one coin's throw and the next, so it
                                 // sprays rather than leaving all at once
             SWEEP_MS:    520,   // the run to the counter
-            STAGGER:     26,
+            STAGGER:      0,    // between one coin's sweep start and the next.
+                                // 0 = all leave together and, sharing one
+                                // duration, ALL ARRIVE AT THE SAME INSTANT.
+                                // Raise it (was 26) to spread the arrivals.
         },
     },
 
@@ -534,9 +537,9 @@ var CONFIG = {
         // the sum beside it and with every other readout. White on dark, like
         // the rest.
         SLOT_RATE: {
-            COLOR:    '#ffffff',
-            STROKE:   '#3a2a00',
-            STROKE_W: 3,
+            COLOR:    '#000000',
+            STROKE:   '#ffffff',
+            STROKE_W: 0,           // no outline
         },
         // ── WHERE THE SLOTS STAND ─────────────────────────────────────────
         // In the FARM half now, a column of three down its left-hand edge with
@@ -729,9 +732,9 @@ var CONFIG = {
             ENABLED: true,
             SIZE:    24,     // px @ design scale
             GAP:      4,     // above the plant's crown (px @ design)
-            COLOR:  '#ffffff',
-            STROKE: '#2b2013',
-            STROKE_W: 4,
+            COLOR:  '#000000',
+            STROKE: '#ffffff',
+            STROKE_W: 0,         // no outline
 
             // NOTHING TO TUNE FOR THE CHANGE ITSELF: the figure is set and that
             // is all. It had a kick on each tick, on the reasoning that a number
@@ -980,6 +983,26 @@ var CONFIG = {
                 BURST_SCALE: 1.275,   // halved from 1.55 (extra scale 0.55 → 0.275)
                 BURST_MS:     140,
                 BURST_EASE: 'Quad.easeIn',
+                // THE SPLINTERS. As the bank goes, a spray of wood chips goes
+                // with it — radial, every way at once, pulled down by GRAVITY
+                // and fading as they fall. Sized against the bank's own
+                // height so they stay in proportion to it.
+                //
+                // COLORS ARE SAMPLED FROM graphics/ui/piggy_bank.png: the light
+                // grain, the body, the shaded underside and its dark outline.
+                CHIPS: {
+                    ENABLED: true,
+                    COUNT:   18,
+                    SIZE_FRAC: 0.16,   // a chip's length, of the bank's height
+                    SCALE_MIN: 0.5,    // the smallest of them, against that size
+                    SPEED_MIN:  90,    // px/s @ design scale
+                    SPEED_MAX: 260,
+                    GRAVITY:   520,
+                    LIFE_MIN:  420,    // ms
+                    LIFE_MAX:  760,
+                    COLORS: [0xf0c084, 0xe4a86c, 0xcc8448, 0xb46c3c, 0x482418],
+                    TEXTURE_PX: 24,    // the baked chip's resolution only
+                },
             },
         },
 

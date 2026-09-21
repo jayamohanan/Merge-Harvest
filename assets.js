@@ -61,8 +61,7 @@ function sharedAssets() {
     // cuts them instead, once the real dimensions are in hand (_sliceCrops).
     const C = CONFIG.CROPS || {};
     if (C.ENABLED !== false) {
-        for (const name of (C.LEVELS || [])) A.image(cropSrcKey(name), cropFileOf(name));
-    }
+        for (const name of (C.LEVELS || [])) A.image(cropSrcKey(name), cropFileOf(name));    }
     return A.list();
 }
 

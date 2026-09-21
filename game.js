@@ -814,7 +814,7 @@ class GameScene extends Phaser.Scene {
                 fontSize, fontFamily: CONFIG.FONT_FAMILY,
                 color: SR.COLOR || '#ffffff', fontStyle: CONFIG.FONT_WEIGHT,
                 stroke: SR.STROKE || '#3a2a00',
-                strokeThickness: Math.max(1, Math.round((SR.STROKE_W !== undefined ? SR.STROKE_W : 3) * scale)),
+                strokeThickness: Math.round((SR.STROKE_W !== undefined ? SR.STROKE_W : 3) * scale),
             }).setOrigin(0.5, 0).setDepth(5).setVisible(false);
 
             this.platforms.push({
@@ -1026,7 +1026,7 @@ class GameScene extends Phaser.Scene {
                         fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
                         color: Y.COLOR || '#ffffff',
                         stroke: Y.STROKE || '#2b2013',
-                        strokeThickness: Math.max(1, Math.round((Y.STROKE_W || 4) * s)),
+                        strokeThickness: Math.round((Y.STROKE_W !== undefined ? Y.STROKE_W : 4) * s),
                     }).setOrigin(0.5, 1).setDepth(D.LABEL);
                 if (grown) {
                     const N = C.NEXT_LEVEL || {};
@@ -1600,6 +1600,7 @@ class GameScene extends Phaser.Scene {
                 ease: E.BURST_EASE || 'Quad.easeIn',
                 onComplete: () => {
                     if (pig.scene) pig.setVisible(false).setScale(rx, ry).setAlpha(1);
+                    this._woodChipBurst(ox, oy, pig.displayHeight, pig.depth);
                     // THE COINS. Scattered across the whole screen — the merge
                     // grid included — then swept to the counter; this is the
                     // very shower animateCoinReward already throws for any
@@ -1610,6 +1611,60 @@ class GameScene extends Phaser.Scene {
         };
 
         squeezeStep(0);
+    }
+
+    // ── The bank's splinters ─────────────────────────────────────────────────
+    // A chip is a lopsided quad, DRAWN WHITE and tinted per particle (like the
+    // leaf), with a translucent grain line the tint carries to a darker shade.
+    _woodChipTexture() {
+        const key = 'wood_chip';
+        if (this.textures.exists(key)) return key;
+        const E = (((CONFIG.CROPS || {}).PIGGY || {}).EXPLODE || {}).CHIPS || {};
+        const px = Math.max(6, Math.round(E.TEXTURE_PX || 24));
+        const canvas = this.textures.createCanvas(key, px, px);
+        const ctx = canvas.getContext();
+        ctx.clearRect(0, 0, px, px);
+        ctx.beginPath();
+        ctx.moveTo(px * 0.05, px * 0.30);
+        ctx.lineTo(px * 0.80, px * 0.10);
+        ctx.lineTo(px * 0.95, px * 0.62);
+        ctx.lineTo(px * 0.20, px * 0.90);
+        ctx.closePath();
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+        ctx.lineWidth = Math.max(1, px / 16);
+        ctx.beginPath();
+        ctx.moveTo(px * 0.15, px * 0.45);
+        ctx.lineTo(px * 0.85, px * 0.35);
+        ctx.stroke();
+        canvas.refresh();
+        return key;
+    }
+
+    // Fired once, where the bank stood, as it goes. The emitter is made for
+    // the burst and torn down after the last chip has faded.
+    _woodChipBurst(x, y, pigH, depth) {
+        const E = (((CONFIG.CROPS || {}).PIGGY || {}).EXPLODE || {}).CHIPS || {};
+        if (E.ENABLED === false) return;
+        const s  = this.layoutConfig.scale;
+        const px = Math.max(6, Math.round(E.TEXTURE_PX || 24));
+        const sc = pigH * (E.SIZE_FRAC !== undefined ? E.SIZE_FRAC : 0.16) / px;
+        const lifeMax = E.LIFE_MAX !== undefined ? E.LIFE_MAX : 760;
+        const emitter = this.add.particles(x, y, this._woodChipTexture(), {
+            lifespan: { min: E.LIFE_MIN !== undefined ? E.LIFE_MIN : 420, max: lifeMax },
+            angle: { min: 0, max: 360 },
+            speed: { min: (E.SPEED_MIN !== undefined ? E.SPEED_MIN : 90)  * s,
+                     max: (E.SPEED_MAX !== undefined ? E.SPEED_MAX : 260) * s },
+            gravityY: (E.GRAVITY !== undefined ? E.GRAVITY : 520) * s,
+            scale: { min: sc * (E.SCALE_MIN !== undefined ? E.SCALE_MIN : 0.5), max: sc },
+            rotate: { start: 0, end: 360 },
+            alpha: { start: 1, end: 0, ease: 'Quad.easeIn' },
+            tint: E.COLORS || [0xf0c084, 0xe4a86c, 0xcc8448, 0xb46c3c, 0x482418],
+            emitting: false,
+        }).setDepth(depth || 0);
+        emitter.explode(E.COUNT !== undefined ? E.COUNT : 18);
+        this.time.delayedCall(lifeMax + 100, () => { if (emitter.scene) emitter.destroy(); });
     }
 
     // ── The next level ───────────────────────────────────────────────────────
@@ -1980,7 +2035,7 @@ class GameScene extends Phaser.Scene {
         batterySprite.setDisplaySize(this.slotBatteryW, this.slotBatteryH);
         batterySprite.setDepth(11);
 
-        const levelText = this.add.text(p.slotX, p.slotY + yOff + tOff, `LVL ${level}`, {
+        const levelText = this.add.text(p.slotX, p.slotY + yOff + tOff, `PIG ${level}`, {
             fontSize: this.slotLevelTextSize, fontFamily: CONFIG.FONT_FAMILY,
             color: CONFIG.CELL.LEVEL_TEXT_COLOR, fontStyle: CONFIG.FONT_WEIGHT,
         }).setOrigin(0.5).setDepth(12);
@@ -2218,7 +2273,7 @@ class GameScene extends Phaser.Scene {
 
         const levelText = this.add.text(
             cell.x, cell.y + this.batteryYOffset + this.levelTextYOffset,
-            `LVL ${level}`,
+            `PIG ${level}`,
             { fontSize: this.levelTextSize, fontFamily: CONFIG.FONT_FAMILY,
               color: CONFIG.CELL.LEVEL_TEXT_COLOR, fontStyle: CONFIG.FONT_WEIGHT })
             .setOrigin(0.5).setDepth(12);
@@ -3010,7 +3065,7 @@ class GameScene extends Phaser.Scene {
         for (const bd of this.batteries) {
             if (bd.inGrid) {
                 bd.level += 1;
-                bd.levelText.setText(`LVL ${bd.level}`);
+                bd.levelText.setText(`PIG ${bd.level}`);
                 bd.sprite.setTexture(`battery${getBatteryIconLevel(bd.level)}`);
                 if (bd.level > this.highestBatteryLevel) this.highestBatteryLevel = bd.level;
             }
@@ -3023,7 +3078,7 @@ class GameScene extends Phaser.Scene {
                 slot.chargePerMinute = getBatteryChargeValue(slot.level);
                 if (slot.batteryData) slot.batteryData.level = slot.level;
                 if (p.batterySprite)    p.batterySprite.setTexture(`battery${getBatteryIconLevel(slot.level)}`);
-                if (p.batteryLevelText) p.batteryLevelText.setText(`LVL ${slot.level}`);
+                if (p.batteryLevelText) p.batteryLevelText.setText(`PIG ${slot.level}`);
                 p.chargeRateText.setText(this._bigNum(slot.chargePerMinute));
             }
         }
@@ -3158,7 +3213,10 @@ class GameScene extends Phaser.Scene {
                                : C.STAGGER_DELAY;
         this.time.delayedCall(delayBeforeFly + settle, () => {
             coins.forEach((coin, i) => {
-                const dur = flyMs * (1 + i * C.SPEED_VARIATION / Math.max(1, n - 1));
+                // Scatter: one duration and (with STAGGER 0) one start, so every
+                // coin lands on the counter at the same instant.
+                const dur = scatter ? flyMs
+                                    : flyMs * (1 + i * C.SPEED_VARIATION / Math.max(1, n - 1));
                 this.time.delayedCall(i * gap, () => {
                     if (!coin.scene) return; // Already destroyed
                     this.tweens.add({
