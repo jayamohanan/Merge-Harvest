@@ -16,7 +16,7 @@
 // Loaded after config.js, before game.js.
 
 // Every entry is { type, key, url, frame? }:
-//   type  'image' | 'sheet' | 'json' | 'audio'
+//   type  'image' | 'sheet' | 'json'
 //   frame { frameWidth, frameHeight } for a sheet
 function assetList() {
     const out = new Map();
@@ -27,7 +27,6 @@ function assetList() {
         image: (key, url) => add('image', key, url),
         sheet: (key, url, w, h) => add('sheet', key, url, { frameWidth: w, frameHeight: h }),
         json:  (key, url) => add('json', key, url),
-        audio: (key, url) => add('audio', key, url),
         list:  () => [...out.values()],
     };
 }
@@ -49,8 +48,6 @@ function sharedAssets() {
     // Grain for the cell faces: neutral grey + blurred noise, blended over the
     // flat colour at bake time (see _makeCellTextures).
     A.image('cell_noise', 'graphics/ui/merge-grid/cell_noise.webp');
-    // The pig's own voice, played once per merge — see CONFIG.SOUND.MERGE.
-    A.audio('sfx_pig', 'sound/pig/pig.ogg');
 
     // THE CROPS — one file each, frames side by side (plant, then fruit alone).
     // Every crop on the ladder, which is a handful of files: there is nothing to

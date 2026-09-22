@@ -55,11 +55,9 @@ rsync -a \
 #
 # Images are hinted as="image" with crossorigin="anonymous", matching how the
 # game loads them (plain image loads, see `loader` in game.js). JSON is hinted
-# as="fetch", which is what Phaser's XHR is. Audio (Phaser's own XHR fetch, not
-# an HTMLAudioElement) is hinted as="fetch" too, for the same reason JSON is. A
-# hint of a different kind than the request would not be reused and the file
-# would download twice — check the Network tab after changing any of these:
-# every file should appear once.
+# as="fetch", which is what Phaser's XHR is. A hint of a different kind than the
+# request would not be reused and the file would download twice — check the
+# Network tab after changing either side: every file should appear once.
 node - "$OUT" <<'EOF'
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const OUT = process.argv[2];
@@ -67,11 +65,12 @@ const ctx = vm.createContext({ console });
 for (const f of ['batteryChargeData.js', 'cropData.js', 'config.js', 'assets.js']) {
   vm.runInContext(fs.readFileSync(path.join(OUT, f), 'utf8'), ctx, { filename: f });
 }
-const pick = vm.runInContext(`sharedAssets().map((a) => ({ url: a.url, as: (a.type === 'json' || a.type === 'audio') ? 'fetch' : 'image' }))`, ctx);
+const pick = vm.runInContext(`sharedAssets().map((a) => ({ url: a.url, json: a.type === 'json' }))`, ctx);
 const hints = new Map();
-for (const p of pick) if (p.url && !hints.has(p.url)) hints.set(p.url, p.as);
-const tags = [...hints].map(([url, as]) =>
-  `\t<link rel="preload" href="${url}" as="${as}" crossorigin="anonymous">`).join('\n');
+for (const p of pick) if (p.url && !hints.has(p.url)) hints.set(p.url, p.json);
+const tags = [...hints].map(([url, json]) => json
+  ? `\t<link rel="preload" href="${url}" as="fetch" crossorigin="anonymous">`
+  : `\t<link rel="preload" href="${url}" as="image" crossorigin="anonymous">`).join('\n');
 const htmlPath = path.join(OUT, 'index.html');
 const page = fs.readFileSync(htmlPath, 'utf8');
 if (!page.includes('</head>')) throw new Error('index.html has no </head> to put preload hints in');

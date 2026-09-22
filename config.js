@@ -123,8 +123,13 @@ var CONFIG = {
     BATTERY_IMAGE_EXTENSIONS: ['svg', 'png', 'jpg', 'webp'],
 
      BACKGROUND: {
-        GRADIENT_START_COLOR: "#B6915c",
-        GRADIENT_END_COLOR: "#B6915c",
+        // MATCHED TO THE FARM HALF'S OWN GROUND — partB (the crops) has no
+        // fill of its own; it is simply the canvas's own backgroundColor
+        // showing through (set on the Phaser game config in game.js). Keeping
+        // this the same value makes the seam between the two halves disappear
+        // instead of reading as two different panels.
+        GRADIENT_START_COLOR: "#d0b288",
+        GRADIENT_END_COLOR: "#d0b288",
         // HOW OPAQUE THE PANEL CARD IS. It was 0 while the farm's own ground
         // sheet ran under both halves and was the better background; that sheet
         // went with the farm, so the card is what the UI half is made of now.
@@ -251,21 +256,6 @@ var CONFIG = {
         PADDING_FROM_BUTTON_TOP: 50,
         // PANEL_DROP is gone: it opened room above the grid for the battery
         // case, and the case has moved to the farm half.
-    },
-
-    SOUND: {
-        // A PIG LEVEL'S DEBUT ONLY — the first time a merge ever produces a
-        // given level, not every later merge that lands on it again. Tied to
-        // highestBatteryLevel going up, the same figure that already tracks
-        // "has this level been seen before" for prefetching and the spawn
-        // button — so level 2 plays it once, on its first appearance, and
-        // every other level-2 pig made afterwards is silent. Level 1 never
-        // plays it: it is the starting level, never a merge result.
-        MERGE: {
-            ENABLED: true,
-            KEY:    'sfx_pig',
-            VOLUME: 1,
-        },
     },
 
     COIN_COUNTER: {

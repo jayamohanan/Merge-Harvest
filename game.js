@@ -469,7 +469,6 @@ class GameScene extends Phaser.Scene {
         // preload hints, so what is loaded here and what is hinted cannot drift.
         for (const a of sharedAssets()) {
             if (a.type === 'json')  this.load.json(a.key, a.url);
-            else if (a.type === 'audio') this.load.audio(a.key, a.url);
             else if (a.frame)       this.load.spritesheet(a.key, a.url, a.frame);
             else                    this.load.image(a.key, a.url);
         }
@@ -2156,7 +2155,7 @@ class GameScene extends Phaser.Scene {
     _pulseBatteryIcon(p) {
         // Subtle pulse on the battery sprite each time it feeds the machine
         if (!p.batterySprite) return;
-        
+
         const P = CONFIG.PLATFORM;
         this.tweens.add({
             targets: p.batterySprite,
@@ -2167,7 +2166,6 @@ class GameScene extends Phaser.Scene {
         });
     }
 
-    
     
     
     
@@ -2839,7 +2837,6 @@ class GameScene extends Phaser.Scene {
         if (newLevel > this.highestBatteryLevel) {
             this.highestBatteryLevel = newLevel; this.updateSpawnButton();
             this.assets.prefetchAhead(newLevel + 1);
-            this._playMergeSound();
         }
         this.createMergeEffect(this.gridCells[tRow][tCol].x, this.gridCells[tRow][tCol].y);
     }
@@ -2955,7 +2952,6 @@ class GameScene extends Phaser.Scene {
         if (newLevel > this.highestBatteryLevel) {
             this.highestBatteryLevel = newLevel; this.updateSpawnButton();
             this.assets.prefetchAhead(newLevel + 1);
-            this._playMergeSound();
         }
         this.createMergeEffect(tp.slotX, tp.slotY);
     }
@@ -3009,25 +3005,6 @@ class GameScene extends Phaser.Scene {
     // rather than deleted from both call sites, so a merge effect can come
     // back here without re-wiring where it fires from.
     createMergeEffect(x, y) {}
-
-    // THE PIG'S OWN VOICE — but only the FIRST time a level is ever reached,
-    // not every merge that happens to land on it again later. Both call sites
-    // fire this from inside their `newLevel > highestBatteryLevel` check, the
-    // same guard that already tells a genuinely new level apart from one the
-    // board has simply produced again — so level 2's debut plays it once, and
-    // every other pig ever merged up to level 2 afterwards stays silent.
-    //
-    // this.sound.play() rather than a stored Sound object: each call is a
-    // fresh instance, so two of these landing close together (unlikely, since
-    // each can now only ever fire once per level) would layer rather than one
-    // cutting the other off.
-    _playMergeSound() {
-        const S = ((CONFIG.SOUND || {}).MERGE) || {};
-        if (S.ENABLED === false) return;
-        const key = S.KEY || 'sfx_pig';
-        if (!this.cache.audio.exists(key)) return;
-        this.sound.play(key, { volume: S.VOLUME !== undefined ? S.VOLUME : 1 });
-    }
 
     // ================================================================
     // LEVEL-UP TIMER
