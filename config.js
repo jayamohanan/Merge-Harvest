@@ -133,7 +133,7 @@ var CONFIG = {
         // THE SEAM between the two halves — the line that says these are two
         // different things rather than one continuous surface.
         SPLIT_LINE: {
-            ENABLED: true,
+            ENABLED: false,
             W:      3,          // px @ design scale
             COLOR:  0x7E6044,   // the tilled-soil brown, so the seam belongs to
                                 // the ground it divides rather than to the UI
@@ -143,7 +143,7 @@ var CONFIG = {
         // The UI PANEL's four corners, px @ design scale. 0 squares it off.
         // The fill is the panel half only; what shows through the notches the
         // rounding leaves is the canvas's own colour, matched to it in the page.
-        CORNER_RADIUS: 26,
+        CORNER_RADIUS: 0,
     },
 
     // ── The stage ─────────────────────────────────────────────────────────────
@@ -251,6 +251,21 @@ var CONFIG = {
         PADDING_FROM_BUTTON_TOP: 50,
         // PANEL_DROP is gone: it opened room above the grid for the battery
         // case, and the case has moved to the farm half.
+    },
+
+    SOUND: {
+        // A PIG LEVEL'S DEBUT ONLY — the first time a merge ever produces a
+        // given level, not every later merge that lands on it again. Tied to
+        // highestBatteryLevel going up, the same figure that already tracks
+        // "has this level been seen before" for prefetching and the spawn
+        // button — so level 2 plays it once, on its first appearance, and
+        // every other level-2 pig made afterwards is silent. Level 1 never
+        // plays it: it is the starting level, never a merge result.
+        MERGE: {
+            ENABLED: true,
+            KEY:    'sfx_pig',
+            VOLUME: 1,
+        },
     },
 
     COIN_COUNTER: {
@@ -566,7 +581,7 @@ var CONFIG = {
             // It is what the crop box's height comes from, and the plots are
             // stepped down the half from it — see createSlots.
             BAND_FRAC: 0.94,
-            // The slot's size as a fraction of its ROW — the cap, not the
+            // The slot's size as a fraction of plotBandH — the cap, not the
             // target. A slot is a grid cell wherever there is room for one and
             // only shrinks when this says it must, which is on a farm half too
             // short to give three plots a cell's worth. Well under half,
@@ -601,7 +616,7 @@ var CONFIG = {
     CROPS: {
         ENABLED: true,
         DIR: 'graphics/crop/',
-        EXT: '.png',
+        EXT: '.webp',
         // ONE FRAME'S WIDTH in the file. The HEIGHT is not declared: a frame is
         // as tall as the file, which varies per crop, and it is read off the
         // image when the sheet is cut (_sliceCrops). A height written here would
@@ -661,7 +676,16 @@ var CONFIG = {
         // The farm half's whole stack, in one place, because which of a plant
         // and its produce is nearer is the entire difference a root crop makes.
         //
-        //   ROOT_FRUIT  a potato or onion at rest: UNDER the foliage
+        //   ROOT_FRUIT  a potato or onion at rest: UNDER the foliage, and now
+        //               under the ground shadow too — the shadow is the last
+        //               thing painted over the soil before the plant, so a
+        //               tuber resting behind it reads as still buried rather
+        //               than sitting on top of the dirt.
+        //   SHADOW      the flat oval cast on the ground beneath the plant.
+        //               Drawn separately from the sprite so it never swings
+        //               with a shake (see CROPS.SHADOW) — it only ever needs
+        //               to sit behind the plant and in front of a root crop's
+        //               buried produce.
         //   LEAF        the harvest's leaves, BEHIND the plant that threw them.
         //               In front they crossed the plant's own face once a
         //               second and read as something thrown AT it; behind, the
@@ -673,13 +697,17 @@ var CONFIG = {
         //   PLANT       the leaves
         //   FRUIT       an ordinary crop's produce at rest: ON the plant
         //   PICKED      any produce while it is being lifted — in front of the
-        //               foliage either way, because it has left the plant
+        //               shadow and the foliage either way, because it has left
+        //               the plant. A root crop's tuber is pulled OUT here: this
+        //               is the step where it stops being ROOT_FRUIT (behind the
+        //               shadow) and becomes this (in front of everything).
         //   LABEL       the figure, over everything the plant does. Above
         //               PICKED on purpose: the count is the readout and a fruit
         //               crossing it once a second would take the one number the
         //               player is reading
         DEPTH: {
-            ROOT_FRUIT: 3,
+            ROOT_FRUIT: 2,
+            SHADOW:     3.2,
             LEAF:       3.5,
             PLANT:      4,
             FRUIT:      5,
@@ -687,11 +715,36 @@ var CONFIG = {
             LABEL:      8,
         },
 
-        // ── THE SPRITE SPACE ────────────────────────────────────────────────
-        // A fixed box per row that every crop is fitted INSIDE, rather than each
-        // crop sizing itself against the row.
+        // ── THE GROUND SHADOW ────────────────────────────────────────────────
+        // One flat oval per plot, drawn here rather than baked into the sheet.
+        // A shadow baked into the art sits IN the sprite and swings with it on
+        // every shake (see PICK.SHAKE) — the ground appears to tilt, which is
+        // the plant's tug reading as something wrong with the floor instead of
+        // something happening to the plant. Drawn separately it never rotates:
+        // the plant tugs, the shadow stays flat on the ground under it.
         //
-        // HEIGHT_FRAC is the box's height as a share of the row, and it is well
+        // SIZED OFF THE PLANT AS DRAWN (crop.w), not the file, so it tracks
+        // whatever the plant is actually scaled to on any screen. WIDTH_FRAC is
+        // the share of that width the oval spans; ASPECT is width ÷ height,
+        // wider than tall the way a cast shadow actually falls.
+        SHADOW: {
+            ENABLED:    true,
+            WIDTH_FRAC: 0.7,
+            ASPECT:     2.8,        // width ÷ height
+            COLOR:      '#000000',
+            ALPHA:      0.20,
+            // A crop's own WIDTH_FRAC, keyed by name, where the default reads
+            // too wide or too narrow — usually because the plant does not fill
+            // its frame the way the reference crop does. Empty until a crop is
+            // actually seen on screen and needs one.
+            OVERRIDES:  {},         // e.g. { corn: 0.45, melon: 0.85 }
+        },
+
+        // ── THE SPRITE SPACE ────────────────────────────────────────────────
+        // A fixed box per plot that every crop is fitted INSIDE, rather than each
+        // crop sizing itself against the plot.
+        //
+        // HEIGHT_FRAC is the box's height as a share of plotBandH (a third of the farm half's height), and it is well
         // under all of it ON PURPOSE: the rest is the gap between one plant and
         // the next, which is part of the layout rather than whatever happens to
         // be left over. Raising it toward 1 closes that gap and the column
@@ -704,7 +757,7 @@ var CONFIG = {
         // as the levels turn over. A crop that does not fill the box stands on
         // its floor, so all three keep one ground line.
         SPRITE_SPACE: {
-            HEIGHT_FRAC: 0.70,     // of the row
+            HEIGHT_FRAC: 0.70,     // of plotBandH
             REF: 'tomato',         // whose aspect the box is cut to
             // Used only if REF's art is missing, so the pair still has a width
             // to be centred on rather than collapsing to the slot alone. Kept
@@ -1031,8 +1084,8 @@ var CONFIG = {
             SPEED_MIN:  45,
             SPEED_MAX: 130,
             GRAVITY:   420,
-            ANGLE_MIN: -165,
-            ANGLE_MAX:  -15,
+            ANGLE_MIN:   15,
+            ANGLE_MAX:  165,
             LIFE_MIN:  620,    // ms. The spread between the two is what keeps
             LIFE_MAX: 1050,    // them from falling and fading in step
             // FOUR GREENS, not one: a burst in a single flat green reads as

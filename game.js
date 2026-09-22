@@ -266,20 +266,22 @@ class GameScene extends Phaser.Scene {
         const panelCenterY      = partA.y + designPanelCY  * sH;
         const coinCenterY       = partA.y + designCoinCY   * sH;
 
-        // ── The farm half's three rows ────────────────────────────────────────
-        // One row per slot, stacked down the half: the slot on the left and the
-        // plant it belongs to on its right, so which battery is doing what for
-        // which plant is read off the row rather than inferred.
+        // ── The farm half's three plots ───────────────────────────────────────
+        // One plot per slot, side by side across the half: the plant with its
+        // slot under it, so which battery is doing what for which plant is read
+        // off the plot rather than inferred.
         //
-        // The ROW is the unit and the PLANT sets its height — it is much the
-        // taller of the two things in it — so the row is sized first and the
-        // slot is capped by what the row leaves. A slot is still a grid cell
-        // wherever there is room for one, which is the common case; it only
-        // shrinks on a farm half too short to give three rows a cell's worth.
+        // The PLOT is the unit and the PLANT sets its height — it is much the
+        // taller of the two things in it — so plotBandH is sized first and the
+        // slot is capped by what it leaves. plotBandH is a third of the half's
+        // HEIGHT (BAND_FRAC of it), a budget for one plot's height rather than
+        // a row. A slot is still a grid cell wherever there is room for one,
+        // which is the common case; it only shrinks on a farm half too short
+        // to give a plot a cell's worth.
         const FS       = P.FARM_SLOTS || {};
-        const rowH     = partB.height * (FS.BAND_FRAC !== undefined ? FS.BAND_FRAC : 0.94) / 3;
+        const plotBandH = partB.height * (FS.BAND_FRAC !== undefined ? FS.BAND_FRAC : 0.94) / 3;
         const slotSize = Math.max(8, Math.min(cellSize,
-                                  rowH * (FS.SLOT_FRAC !== undefined ? FS.SLOT_FRAC : 0.62)));
+                                  plotBandH * (FS.SLOT_FRAC !== undefined ? FS.SLOT_FRAC : 0.62)));
 
         // Slot-derived sizes ride this: it equals `scale`, expressed against the
         // reference slot so slot-space numbers convert without a second factor.
@@ -400,7 +402,7 @@ class GameScene extends Phaser.Scene {
             partA, partB,
             platformScale,
             sW, sH, scale,
-            panelCenterY, buttonCenterY, coinCenterY, slotSize, rowH,
+            panelCenterY, buttonCenterY, coinCenterY, slotSize, plotBandH,
             // Battery / cell content
             batteryDisplayW, batteryDisplayH, batteryYOffset, levelTextYOffset, levelTextSize,
             slotBatteryW, slotBatteryH, slotBatteryYOffset, slotLevelTextYOffset, slotLevelTextSize,
@@ -467,6 +469,7 @@ class GameScene extends Phaser.Scene {
         // preload hints, so what is loaded here and what is hinted cannot drift.
         for (const a of sharedAssets()) {
             if (a.type === 'json')  this.load.json(a.key, a.url);
+            else if (a.type === 'audio') this.load.audio(a.key, a.url);
             else if (a.frame)       this.load.spritesheet(a.key, a.url, a.frame);
             else                    this.load.image(a.key, a.url);
         }
@@ -608,7 +611,7 @@ class GameScene extends Phaser.Scene {
     // ================================================================
     // PLATFORM SYSTEM (battery slots)
     // ================================================================
-    // ── 3 battery slots, one per row of the FARM half ────────────────────────
+    // ── 3 battery slots, one per plot of the FARM half ────────────────────────
     //
     //    Plain squares now. The battery-shaped case that used to hold them, the
     //    plus signs between them, the terminal node and the ghosted trencher
@@ -617,15 +620,15 @@ class GameScene extends Phaser.Scene {
     //    battery, drawn with the same grained face as a grid cell so a slot and
     //    a cell read as the same kind of object.
     //
-    //    EACH ONE BELONGS TO A PLANT. The half is three rows deep; a row is a
-    //    slot on the left and the plant it feeds on its right, on one centre
-    //    line. That pairing is the whole reason for the arrangement, so the rows
-    //    are worked out ONCE here and handed to buildCrops — a slot and its
-    //    plant cannot drift apart, because neither one owns the number.
+    //    EACH ONE BELONGS TO A PLANT. The half is three plots wide; a plot is a
+    //    plant with its slot under it, on one centre line. That pairing is the
+    //    whole reason for the arrangement, so the plots are worked out ONCE here
+    //    and handed to buildCrops — a slot and its plant cannot drift apart,
+    //    because neither one owns the number.
     //
     //    Slots are STATIC: they persist across levels.
     // ── The sprite space ─────────────────────────────────────────────────────
-    // The box a plant is drawn into: a share of the ROW for its height, and its
+    // The box a plant is drawn into: a share of plotBandH for its height, and its
     // own width from the REFERENCE crop's frame aspect. Fixed for every level —
     // see CROPS.SPRITE_SPACE.
     //
@@ -635,7 +638,7 @@ class GameScene extends Phaser.Scene {
     // size.
     _cropBox() {
         const C = CONFIG.CROPS || {}, SS = C.SPRITE_SPACE || {};
-        let h = this.layoutConfig.rowH * (SS.HEIGHT_FRAC !== undefined ? SS.HEIGHT_FRAC : 0.70);
+        let h = this.layoutConfig.plotBandH * (SS.HEIGHT_FRAC !== undefined ? SS.HEIGHT_FRAC : 0.70);
         const refK = `crop_${SS.REF || 'tomato'}`;
         // The aspect comes off THE FRAME, not the file: the file is however many
         // frames wide, and dividing its width by a frame count nobody counted is
@@ -831,8 +834,8 @@ class GameScene extends Phaser.Scene {
     // ================================================================
     // THE CROPS
     // ================================================================
-    // One plant per row, standing to the right of the slot that belongs to it —
-    // three of them down the farm half, on the rows createSlots laid out.
+    // One plant per plot, standing over the slot that belongs to it — three of
+    // them across the farm half, on the plots createSlots laid out.
     //
     // A plant's sheet is two frames side by side in one 256x256 file: frame 0 is
     // the PLANT and frame 1 is the FRUIT ALONE, drawn over it at exactly the
@@ -941,13 +944,13 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // The depth stack these three rows are drawn in — one place, because
+        // The depth stack these three plots are drawn in — one place, because
         // which of the plant and its produce is in front is the whole of what a
         // root crop changes.
-        const D = Object.assign({ PLANT: 4, FRUIT: 5, ROOT_FRUIT: 3, PICKED: 6, LABEL: 8 },
+        const D = Object.assign({ PLANT: 4, FRUIT: 5, ROOT_FRUIT: 2, SHADOW: 3.2, PICKED: 6, LABEL: 8 },
                                 C.DEPTH || {});
 
-        // WHAT EACH PLANT HOLDS, top to bottom. The row's position IS which
+        // WHAT EACH PLANT HOLDS, top to bottom. The plot's position IS which
         // figure it takes — no plant carries its own copy, so the three cannot
         // come out in a different order than the table reads.
         const yields = cropValuesFor(lvl);
@@ -985,8 +988,32 @@ class GameScene extends Phaser.Scene {
             //
             // It is a FLIP, not a second drawing — see CROPS.MIRROR_ROWS.
             const flip = (C.MIRROR_ROWS || [1]).indexOf(i) >= 0;
+
+            // THE GROUND SHADOW, drawn before the plant and never touched by
+            // its shake — see CROPS.SHADOW. Sized off w, the plant's OWN drawn
+            // width, so it tracks whatever this crop is scaled to here rather
+            // than the file's raw pixels.
+            const SH = C.SHADOW || {};
+            let shadow = null;
+            if (SH.ENABLED !== false) {
+                const frac = (SH.OVERRIDES || {})[name] !== undefined
+                    ? SH.OVERRIDES[name]
+                    : (SH.WIDTH_FRAC !== undefined ? SH.WIDTH_FRAC : 0.7);
+                const shW = w * frac;
+                const shH = shW / (SH.ASPECT !== undefined ? SH.ASPECT : 2.8);
+                // BOTTOM EDGE ON THE FOOT LINE, not centred on it — the art no
+                // longer carries its own baked shadow, so the plant sits at the
+                // height that used to put it mid-shadow. Half the ellipse's
+                // height above baseY puts the whole oval under the plant with
+                // its lower rim exactly on the ground line instead of straddling it.
+                shadow = this.add.ellipse(cx, baseY - shH / 2, shW, shH,
+                        hexColor(SH.COLOR || '#000000'), SH.ALPHA !== undefined ? SH.ALPHA : 0.20)
+                    .setDepth(D.SHADOW !== undefined ? D.SHADOW : 3.2);
+            }
+
             const crop = {
                 name, level: lvl, row: i, w, h, cx, baseY, cy: baseY - h / 2,
+                shadow,
                 // THE PLANT STANDS ON THE FLOOR — foot origin, so a crop that
                 // does not fill the box's height is short at the top rather than
                 // floating clear of the line the others stand on.
@@ -1257,7 +1284,7 @@ class GameScene extends Phaser.Scene {
         // the foliage would read as sitting on top of the plant rather than as
         // the thing the plant is growing from. Behind it, the foliage overlaps
         // the tuber and the two read as one plant rooted in the soil.
-        const rest = crop.root ? (D.ROOT_FRUIT !== undefined ? D.ROOT_FRUIT : 3)
+        const rest = crop.root ? (D.ROOT_FRUIT !== undefined ? D.ROOT_FRUIT : 2)
                                : (D.FRUIT      !== undefined ? D.FRUIT      : 5);
         // TURNED THE SAME WAY THE PLANT IS. Both frames are drawn over exactly
         // the same rectangle, so the flip that mirrors the plant has to mirror
@@ -1355,12 +1382,10 @@ class GameScene extends Phaser.Scene {
     }
 
     // ── A harvest's leaves ───────────────────────────────────────────────────
-    // Thrown out of the canopy where the fruit came away and dropped past the
-    // plant: out and UP first, then over and down under gravity, tumbling as
-    // they go. Up-then-down rather than straight down, because straight down is
-    // something falling off a plant and out-then-down is something being pulled
-    // OFF one — which is the difference between a plant shedding and a plant
-    // being worked.
+    // Thrown out of the canopy where the fruit came away, falling from the
+    // instant they spawn: out and DOWN, tumbling as gravity pulls them the rest
+    // of the way. No upward launch first — that read as the leaves being
+    // thrown, when what a pick sheds off a plant simply drops.
     //
     // ONE EMITTER FOR THE WHOLE FARM, made on the first pick and parked with
     // `emitting: false`, then fired at a point. Three plants picking once a
@@ -1391,11 +1416,12 @@ class GameScene extends Phaser.Scene {
             this.leafEmitter = this.add.particles(0, 0, this._leafTexture(), {
                 lifespan: { min: L.LIFE_MIN !== undefined ? L.LIFE_MIN : 620,
                             max: L.LIFE_MAX !== undefined ? L.LIFE_MAX : 1050 },
-                // OUT AND UP: the upward half of the circle, so every leaf
-                // leaves the canopy going away from it and gravity is what
-                // turns each one over and brings it down.
-                angle: { min: L.ANGLE_MIN !== undefined ? L.ANGLE_MIN : -165,
-                         max: L.ANGLE_MAX !== undefined ? L.ANGLE_MAX : -15 },
+                // OUT AND DOWN: the downward half of the circle, so every leaf
+                // is already falling the instant it leaves the canopy, and
+                // gravity only adds to that rather than fighting an upward
+                // launch first.
+                angle: { min: L.ANGLE_MIN !== undefined ? L.ANGLE_MIN : 15,
+                         max: L.ANGLE_MAX !== undefined ? L.ANGLE_MAX : 165 },
                 speed: { min: (L.SPEED_MIN !== undefined ? L.SPEED_MIN : 45)  * s,
                          max: (L.SPEED_MAX !== undefined ? L.SPEED_MAX : 130) * s },
                 gravityY: (L.GRAVITY !== undefined ? L.GRAVITY : 420) * s,
@@ -1703,7 +1729,7 @@ class GameScene extends Phaser.Scene {
         let any = false;
         for (const cr of list) {
             if (cr.regrow) { cr.regrow.remove(false); cr.regrow = null; }
-            for (const o of [cr.plant, cr.fruit, cr.label]) {
+            for (const o of [cr.plant, cr.fruit, cr.label, cr.shadow]) {
                 if (!o || !o.scene) continue;
                 any = true;
                 this.tweens.killTweensOf(o);
@@ -1713,7 +1739,7 @@ class GameScene extends Phaser.Scene {
                     duration: ms, ease: N.CLEAR_EASE || 'Back.easeIn',
                     onComplete: () => o.destroy() });
             }
-            cr.plant = cr.fruit = cr.label = null;
+            cr.plant = cr.fruit = cr.label = cr.shadow = null;
         }
         this.time.delayedCall(any ? ms : 0, done);
     }
@@ -2035,7 +2061,7 @@ class GameScene extends Phaser.Scene {
         batterySprite.setDisplaySize(this.slotBatteryW, this.slotBatteryH);
         batterySprite.setDepth(11);
 
-        const levelText = this.add.text(p.slotX, p.slotY + yOff + tOff, `PIG ${level}`, {
+        const levelText = this.add.text(p.slotX, p.slotY + yOff + tOff, `PIGGY ${level}`, {
             fontSize: this.slotLevelTextSize, fontFamily: CONFIG.FONT_FAMILY,
             color: CONFIG.CELL.LEVEL_TEXT_COLOR, fontStyle: CONFIG.FONT_WEIGHT,
         }).setOrigin(0.5).setDepth(12);
@@ -2273,7 +2299,7 @@ class GameScene extends Phaser.Scene {
 
         const levelText = this.add.text(
             cell.x, cell.y + this.batteryYOffset + this.levelTextYOffset,
-            `PIG ${level}`,
+            `PIGGY ${level}`,
             { fontSize: this.levelTextSize, fontFamily: CONFIG.FONT_FAMILY,
               color: CONFIG.CELL.LEVEL_TEXT_COLOR, fontStyle: CONFIG.FONT_WEIGHT })
             .setOrigin(0.5).setDepth(12);
@@ -2813,6 +2839,7 @@ class GameScene extends Phaser.Scene {
         if (newLevel > this.highestBatteryLevel) {
             this.highestBatteryLevel = newLevel; this.updateSpawnButton();
             this.assets.prefetchAhead(newLevel + 1);
+            this._playMergeSound();
         }
         this.createMergeEffect(this.gridCells[tRow][tCol].x, this.gridCells[tRow][tCol].y);
     }
@@ -2928,6 +2955,7 @@ class GameScene extends Phaser.Scene {
         if (newLevel > this.highestBatteryLevel) {
             this.highestBatteryLevel = newLevel; this.updateSpawnButton();
             this.assets.prefetchAhead(newLevel + 1);
+            this._playMergeSound();
         }
         this.createMergeEffect(tp.slotX, tp.slotY);
     }
@@ -2976,9 +3004,29 @@ class GameScene extends Phaser.Scene {
         this.tweens.add({ targets: bd.levelText, x: bd.originalX, y: tY,           duration: 200, ease: 'Back.easeOut' });
     }
 
-    createMergeEffect(x, y) {
-        const c = this.add.circle(x, y, this.mergeEffectRadius, 0xFFFFFF, 0.8).setDepth(20);
-        this.tweens.add({ targets: c, scaleX: 2, scaleY: 2, alpha: 0, duration: 300, onComplete: () => c.destroy() });
+    // OFF ON PURPOSE. This used to draw a white circle that scaled up and
+    // faded at the merge point; removed at the art's request. Left as a no-op
+    // rather than deleted from both call sites, so a merge effect can come
+    // back here without re-wiring where it fires from.
+    createMergeEffect(x, y) {}
+
+    // THE PIG'S OWN VOICE — but only the FIRST time a level is ever reached,
+    // not every merge that happens to land on it again later. Both call sites
+    // fire this from inside their `newLevel > highestBatteryLevel` check, the
+    // same guard that already tells a genuinely new level apart from one the
+    // board has simply produced again — so level 2's debut plays it once, and
+    // every other pig ever merged up to level 2 afterwards stays silent.
+    //
+    // this.sound.play() rather than a stored Sound object: each call is a
+    // fresh instance, so two of these landing close together (unlikely, since
+    // each can now only ever fire once per level) would layer rather than one
+    // cutting the other off.
+    _playMergeSound() {
+        const S = ((CONFIG.SOUND || {}).MERGE) || {};
+        if (S.ENABLED === false) return;
+        const key = S.KEY || 'sfx_pig';
+        if (!this.cache.audio.exists(key)) return;
+        this.sound.play(key, { volume: S.VOLUME !== undefined ? S.VOLUME : 1 });
     }
 
     // ================================================================
@@ -3065,7 +3113,7 @@ class GameScene extends Phaser.Scene {
         for (const bd of this.batteries) {
             if (bd.inGrid) {
                 bd.level += 1;
-                bd.levelText.setText(`PIG ${bd.level}`);
+                bd.levelText.setText(`PIGGY ${bd.level}`);
                 bd.sprite.setTexture(`battery${getBatteryIconLevel(bd.level)}`);
                 if (bd.level > this.highestBatteryLevel) this.highestBatteryLevel = bd.level;
             }
@@ -3078,7 +3126,7 @@ class GameScene extends Phaser.Scene {
                 slot.chargePerMinute = getBatteryChargeValue(slot.level);
                 if (slot.batteryData) slot.batteryData.level = slot.level;
                 if (p.batterySprite)    p.batterySprite.setTexture(`battery${getBatteryIconLevel(slot.level)}`);
-                if (p.batteryLevelText) p.batteryLevelText.setText(`PIG ${slot.level}`);
+                if (p.batteryLevelText) p.batteryLevelText.setText(`PIGGY ${slot.level}`);
                 p.chargeRateText.setText(this._bigNum(slot.chargePerMinute));
             }
         }
