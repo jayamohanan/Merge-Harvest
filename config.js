@@ -586,6 +586,15 @@ var CONFIG = {
             // a gap between one plot and the next: the plant is shrunk to fit
             // it rather than allowed to reach into its neighbour's column.
             COLUMN_FRAC: 0.86,
+            // PORTRAIT ONLY — how far the outer two plots sit from the centre
+            // one, as a fraction of the full column spread that landscape
+            // still uses at 1. The stacked portrait half is much narrower
+            // than landscape's, and the full spread there puts the side
+            // plants uncomfortably close to the panel's own edges. Applied to
+            // both the plot centres (createSlots) and the crop box's own
+            // width cap (_cropBox) together, so the boxes narrow along with
+            // the gap between them rather than starting to overlap.
+            SIDE_SPREAD_FRAC: 0.7,
             // How much of the half's HEIGHT one plot's plant is sized against.
             // It is what the crop box's height comes from, and the plots are
             // stepped down the half from it — see createSlots.
@@ -792,7 +801,7 @@ var CONFIG = {
         // fit, a unit once they do not.
         YIELD_LABEL: {
             ENABLED: true,
-            SIZE:    24,     // px @ design scale
+            SIZE:    31,     // px @ design scale — 24 × 1.3
             GAP:      4,     // above the plant's crown (px @ design)
             // NEAR-BLACK, not pure black — same as CELL.LEVEL_TEXT_COLOR and
             // this label's own STROKE below, rather than a harsher pure #000.

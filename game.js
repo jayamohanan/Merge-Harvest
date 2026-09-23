@@ -384,7 +384,7 @@ class GameScene extends Phaser.Scene {
 
         // Coin counter display (above grid panel)
         const coinIconSize       = Math.round(CONFIG.COIN_COUNTER.COIN_ICON_WIDTH * scale);
-        const coinTextSize       = Math.max(12, Math.round(29 * scale)) + 'px';   // 40% down from 48
+        const coinTextSize       = Math.max(12, Math.round(29 * 1.3 * scale)) + 'px';   // 40% down from 48, then 30% back up
         const coinTextIconGap    = Math.max(3,  Math.round(5 * scale));
 
         // Drawing geometry — cell and slot borders/radii
@@ -655,8 +655,16 @@ class GameScene extends Phaser.Scene {
         // middle. So the width is checked against the column first and the
         // HEIGHT gives way — never the aspect, which would squash the plant
         // rather than shrink it.
+        //
+        // NARROWED IN PORTRAIT BY THE SAME FRACTION as the plot centres
+        // themselves (see createSlots' SIDE_SPREAD_FRAC) — the centres are
+        // only pulled closer together there, the box's own cap is untouched
+        // by that on its own, and a box still sized for the FULL column
+        // width would reach past the narrower gap into its neighbour's box.
         const FS   = (CONFIG.PLATFORM || {}).FARM_SLOTS || {};
-        const colW = (this.layoutConfig.partB.width / 3)
+        const spreadFrac = this.isPortrait
+            ? (FS.SIDE_SPREAD_FRAC !== undefined ? FS.SIDE_SPREAD_FRAC : 0.7) : 1;
+        const colW = (this.layoutConfig.partB.width / 3) * spreadFrac
                    * (FS.COLUMN_FRAC !== undefined ? FS.COLUMN_FRAC : 0.86);
         if (h * aspect > colW) h = colW / aspect;
         return { w: h * aspect, h };
@@ -745,8 +753,25 @@ class GameScene extends Phaser.Scene {
         // Where each plot's plant centres — its column's middle, and the one
         // line they all stand on. Held here, with the geometry that decides
         // it, so buildCrops cannot place a plant anywhere else.
+        //
+        // colCx is the column's OWN, unnarrowed centre — kept around after
+        // this so the banks below can still measure from the real column
+        // rather than from wherever the plot ends up.
+        //
+        // PORTRAIT PULLS THE OUTER TWO IN. The full column spread reads fine
+        // in the wide landscape half; stacked in portrait the half is much
+        // narrower and the same spread puts the side plants uncomfortably
+        // close to the panel's own edges. SIDE_SPREAD_FRAC scales only the
+        // OUTER two plots' offset from the centre column, in portrait only —
+        // the centre plot's own offset is nought, so it never moves, and
+        // landscape is untouched (spreadFrac 1 reproduces the plain formula
+        // exactly).
+        const colCx = [0, 1, 2].map((i) => B.x + colW * (i + 0.5));
+        const midX  = colCx[1];
+        const spreadFrac = this.isPortrait
+            ? (FS.SIDE_SPREAD_FRAC !== undefined ? FS.SIDE_SPREAD_FRAC : 0.7) : 1;
         this.farmRows = [0, 1, 2].map((i) => ({
-            cx: B.x + colW * (i + 0.5),
+            cx: midX + (colCx[i] - midX) * spreadFrac,
             cy: top + head + box.h / 2,
         }));
 
@@ -760,9 +785,13 @@ class GameScene extends Phaser.Scene {
         // from centre is nought, and any fraction of nought is nought), and the
         // outer two end up inboard of their plants — which is what turns their
         // flights into diagonals converging on the row. See CROPS.PIGGY.
+        //
+        // MEASURED OFF colCx, NOT row.cx — the banks keep their own spread
+        // regardless of the portrait narrowing just above. If they measured
+        // off row.cx instead, pulling the plants in would also drag the
+        // banks in a second time, on top of their own SPREAD.
         this.piggyBanks = null;
         if (pigOn) {
-            const midX   = B.x + colW * 1.5;
             const spread = PG.SPREAD !== undefined ? PG.SPREAD : 0.25;
             const pigY   = B.y + pigPad + pigH / 2;
             // BY HEIGHT, keeping the art's aspect — SIZE is the bank's height
@@ -770,8 +799,8 @@ class GameScene extends Phaser.Scene {
             // the same figure would squash any bank that is not square.
             const src  = this.textures.get('piggy_bank').get(0);
             const pigW = src && src.height ? pigH * (src.width / src.height) : pigH;
-            this.piggyBanks = this.farmRows.map((row) =>
-                this.add.image(midX + (row.cx - midX) * spread, pigY, 'piggy_bank')
+            this.piggyBanks = colCx.map((cx) =>
+                this.add.image(midX + (cx - midX) * spread, pigY, 'piggy_bank')
                     .setDisplaySize(pigW, pigH)
                     .setDepth(PG.DEPTH !== undefined ? PG.DEPTH : 7));
         }
