@@ -1,4 +1,4 @@
-// Merge Harvest — main game scene
+// Piggy's Harvest — main game scene
 // No physics engine — pure drag/drop merge, with the farm half showing the crop
 
 class AssetManager {
@@ -2597,11 +2597,13 @@ class GameScene extends Phaser.Scene {
     // the other two are for. In-and-back rather than a full bounce — the motion
     // has to point, and a symmetric bob points at nothing.
     //
-    // FROM THE SIDE, BOTH ORIENTATIONS — which is the only way in. The plant
-    // stands directly above its slot and the charge-rate figure sits directly
-    // below it, so an arrow driven in from either of those would arrive over
-    // something else that is already saying something. The sides are what the
-    // plot deliberately leaves clear.
+    // LANDSCAPE COMES IN FROM THE SIDE. The plant stands directly above its
+    // slot and the charge-rate figure sits directly below it, so an arrow
+    // driven in from either of those would arrive over something else that
+    // is already saying something — the sides are what the plot leaves
+    // clear. PORTRAIT COMES IN FROM BELOW instead: the case stands on end
+    // there with its slots stacked, so bottom-up is the equivalent clear
+    // approach — see the portrait branch below.
     _showSlotHint() {
         const H = CONFIG.SLOT_HINT || {};
         if (H.ENABLED === false || this.slotHintDone || this.slotHints) return;
@@ -2613,7 +2615,17 @@ class GameScene extends Phaser.Scene {
 
         const s = this.layoutConfig.scale;
         const P = CONFIG.POINTER || {};
+        const HI = CONFIG.HINT_ICON || {};
         const len  = (H.SIZE || 23) * s;
+        // PORTRAIT GOES VERTICAL. Landscape's side approach exists because the
+        // plant sits directly above the slot and the rate label directly
+        // below it (see the class comment above) — but that reasoning is
+        // about the SLOT's own neighbours, not about the screen's shape, and
+        // in portrait the case stands on end with its slots stacked, so an
+        // arrow crossing in from the side now reads fine bottom-up too: the
+        // pig sits lowest, the arrow above it points up into the slot, and
+        // the pair rides upward together instead of sideways.
+        const portrait = this.isPortrait;
         this.slotHints = [];
         for (const p of this.platforms) {
             if (!p || p.slotX === undefined) continue;
@@ -2621,44 +2633,65 @@ class GameScene extends Phaser.Scene {
             // DRAWN, rather than drawn
             // ON: one shape, one outline, no art file, and it turns to face
             // whichever way the layout needs without a second drawing.
-            const arrow = this._makeArrow('e', len,
+            const arrow = this._makeArrow(portrait ? 'n' : 'e', len,
                     len * (H.W_FRAC !== undefined ? H.W_FRAC : 1.35),
                     P.FILL_COLOR || '#ffd251', P.STROKE_COLOR || '#6d5727',
                     (P.STROKE_WIDTH || 3) * s)
                 .setDepth(103).setAlpha(0);
             // IT CROSSES THE SLOT'S EDGE rather than hovering outside it. The
             // crossing is what reads as "in here" instead of "over there".
-            const run   = (H.TRAVEL !== undefined ? H.TRAVEL : 0.193) * size;
-            const gap   = (H.SIDE_GAP !== undefined ? H.SIDE_GAP : 0.12) * size;
-            const x0    = p.slotX - size / 2 - gap - len / 2;
-            arrow.setPosition(x0, p.slotY);
+            const run = (H.TRAVEL !== undefined ? H.TRAVEL : 0.193) * size;
+            const gap = (H.SIDE_GAP !== undefined ? H.SIDE_GAP : 0.12) * size;
 
-            // THE PIG, TO THE LEFT OF THE ARROW — the arrow points right (dir
-            // 'e'), so "pig, then arrow, then slot" is what reads as "drag
-            // the pig in here". Riding along with the arrow's own stroke
-            // (same relative travel, applied to each one's own start) rather
-            // than sitting still, so the two never drift apart. See
+            // THE PIG, ON THE FAR SIDE OF THE ARROW FROM THE SLOT either way —
+            // to its left when the arrow points right, below it when the
+            // arrow points up — so "pig, then arrow, then slot" always reads
+            // as "drag the pig in here". Riding along with the arrow's own
+            // stroke (same relative travel, applied to each one's own start)
+            // rather than sitting still, so the two never drift apart. See
             // CONFIG.HINT_ICON.
-            const HI = CONFIG.HINT_ICON || {};
+            const iconSize = (HI.SIZE !== undefined ? HI.SIZE : 32) * s;
+            const iconGap  = (HI.GAP !== undefined ? HI.GAP : 4) * s;
             let icon = null;
-            if (HI.ENABLED !== false && this.textures.exists('pig_hint')) {
-                const iconSize = (HI.SIZE !== undefined ? HI.SIZE : 32) * s;
-                const iconGap  = (HI.GAP !== undefined ? HI.GAP : 4) * s;
-                const iconX    = x0 - len / 2 - iconGap - iconSize / 2;
-                icon = this.add.image(iconX, p.slotY, 'pig_hint')
-                    .setDisplaySize(iconSize, iconSize)
-                    .setTint(hexColor(HI.TINT || '#9a9a9a'))
-                    .setDepth(102)   // behind the arrow (103), not under it
-                    .setAlpha(0);
+            const wantIcon = HI.ENABLED !== false && this.textures.exists('pig_hint');
+
+            if (portrait) {
+                const y0 = p.slotY + size / 2 + gap + len / 2;
+                arrow.setPosition(p.slotX, y0);
+                if (wantIcon) {
+                    const iconY = y0 + len / 2 + iconGap + iconSize / 2;
+                    icon = this.add.image(p.slotX, iconY, 'pig_hint')
+                        .setDisplaySize(iconSize, iconSize)
+                        .setTint(hexColor(HI.TINT || '#9a9a9a'))
+                        .setDepth(102)   // behind the arrow (103), not under it
+                        .setAlpha(0);
+                }
+                // RELATIVE, and UP is minus-Y — each starts at its own y, so
+                // both travel the same distance rather than landing on one
+                // shared y.
+                this.tweens.add({ targets: icon ? [arrow, icon] : arrow, y: `-=${run}`,
+                    duration: H.MS || 380, ease: H.EASE || 'Sine.easeInOut',
+                    yoyo: true, repeat: -1 });
+            } else {
+                const x0 = p.slotX - size / 2 - gap - len / 2;
+                arrow.setPosition(x0, p.slotY);
+                if (wantIcon) {
+                    const iconX = x0 - len / 2 - iconGap - iconSize / 2;
+                    icon = this.add.image(iconX, p.slotY, 'pig_hint')
+                        .setDisplaySize(iconSize, iconSize)
+                        .setTint(hexColor(HI.TINT || '#9a9a9a'))
+                        .setDepth(102)
+                        .setAlpha(0);
+                }
+                // RELATIVE, not an absolute end point — the arrow and the
+                // icon start at different x's (the icon sits to its left), so
+                // each needs to travel the SAME distance from its OWN start
+                // rather than both landing on one shared x.
+                this.tweens.add({ targets: icon ? [arrow, icon] : arrow, x: `+=${run}`,
+                    duration: H.MS || 380, ease: H.EASE || 'Sine.easeInOut',
+                    yoyo: true, repeat: -1 });
             }
 
-            // RELATIVE, not an absolute end point — the arrow and the icon
-            // start at different x's (the icon sits to its left), so each
-            // needs to travel the SAME distance from its OWN start rather
-            // than both landing on one shared x.
-            this.tweens.add({ targets: icon ? [arrow, icon] : arrow, x: `+=${run}`,
-                duration: H.MS || 380, ease: H.EASE || 'Sine.easeInOut',
-                yoyo: true, repeat: -1 });
             this.tweens.add({ targets: arrow, alpha: 1,
                 duration: H.FADE_MS !== undefined ? H.FADE_MS : 260 });
             if (icon) {
@@ -3130,6 +3163,19 @@ class GameScene extends Phaser.Scene {
             .setDepth(10000)
             .setInteractive();  // Block clicks from passing through overlay
         
+        // "REWARD IN PROGRESS", sat just above the countdown — the number
+        // alone read as a bare timer with nothing to say what it was
+        // counting down TO. Static for the whole wait; only the number below
+        // it moves.
+        const rewardText = this.add.text(W / 2,
+                H / 2 - (A.REWARD_TEXT_GAP !== undefined ? A.REWARD_TEXT_GAP : 20),
+                A.REWARD_TEXT || 'Reward in progress', {
+            fontSize: A.REWARD_TEXT_SIZE || '40px',
+            fontFamily: CONFIG.FONT_FAMILY,
+            color: A.REWARD_TEXT_COLOR || '#FFFFFF',
+            fontStyle: CONFIG.FONT_WEIGHT,
+        }).setOrigin(0.5, 1).setDepth(10001);
+
         // Create countdown timer text in center
         const timerText = this.add.text(W / 2, H / 2, `${A.DURATION}`, {
             fontSize: A.TIMER_TEXT_SIZE,
@@ -3137,7 +3183,7 @@ class GameScene extends Phaser.Scene {
             color: A.TIMER_TEXT_COLOR,
             fontStyle: CONFIG.FONT_WEIGHT,
         }).setOrigin(0.5).setDepth(10001);
-        
+
         // Countdown from AD.DURATION to 0
         let timeLeft = A.DURATION;
         const countdownEvent = this.time.addEvent({
@@ -3151,6 +3197,7 @@ class GameScene extends Phaser.Scene {
                     // Ad complete - destroy immediately and upgrade
                     countdownEvent.remove();  // Stop the countdown to prevent multiple calls
                     overlay.destroy();
+                    rewardText.destroy();
                     timerText.destroy();
                     this.isWatchingAd = false;  // Re-enable interactions
                     onComplete();  // Instant upgrade after ad

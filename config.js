@@ -247,6 +247,13 @@ var CONFIG = {
         OVERLAY_ALPHA: 1.0,  // Fully opaque - blocks game view completely
         TIMER_TEXT_SIZE: '120px',
         TIMER_TEXT_COLOR: '#FFFFFF',
+        // ABOVE THE COUNTDOWN — a bare number said "waiting" without saying
+        // what for. This says it once, and stays up the whole time rather
+        // than counting down itself.
+        REWARD_TEXT:       'Reward in progress',
+        REWARD_TEXT_SIZE:  '40px',
+        REWARD_TEXT_COLOR: '#FFFFFF',
+        REWARD_TEXT_GAP:   20,   // clearance above the countdown number, px
     },
 
     MERGE_GRID: {
