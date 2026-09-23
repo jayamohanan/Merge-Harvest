@@ -226,9 +226,6 @@ var CONFIG = {
         SPAWN_HEIGHT: 90,
         LEVELUP_WIDTH: 180,
         LEVELUP_HEIGHT: 70,
-        LEVELUP_COLOR: "#FF6B9D",
-        LEVELUP_BORDER_COLOR: "#E91E63",
-        LEVELUP_BORDER_WIDTH: 4,
         BOTTOM_PADDING: 70,
         BUTTON_SPACING: 220,
         BATTERY_ICON_WIDTH: 64,
@@ -589,7 +586,7 @@ var CONFIG = {
 
         // Battery icons pulse once per charge tick.
         BATTERY_PULSE_SCALE: 0.6,      // scale the icon springs to
-        BATTERY_PULSE_DURATION: 80,    // ms, one way
+        BATTERY_PULSE_DURATION: 40,    // ms, one way — halved, to try a faster harvest
     },
 
     // ===================================================================
@@ -867,7 +864,7 @@ var CONFIG = {
                              // "off the plant" has to look like — the fruit is
                              // drawn partway down a full-height frame, so a
                              // shorter rise leaves it still among the leaves
-            MS:   420,
+            MS:   220,       // halved from 420, to try a faster harvest
             EASE: 'Sine.easeOut',
 
             // ── THE TUG ─────────────────────────────────────────────────────
@@ -960,7 +957,7 @@ var CONFIG = {
             // bank has no moment of "picked" in it, and the pick is the thing
             // the tick is announcing. Lift, hang, then go.
             FLY: {
-                MS:   420,
+                MS:   220,       // halved from 420, to try a faster harvest
                 // ACCELERATING AWAY. The fruit is at rest at the top of its lift
                 // and has to start moving from there; easing IN means it creeps
                 // off, gathers pace and arrives fast, which is what being drawn

@@ -45,6 +45,9 @@ function sharedAssets() {
     A.image('piggy_bank', 'graphics/ui/piggy_bank.png');
     A.image('point',      'graphics/ui/merge-grid/point.png');
     A.image('button',     'graphics/ui/merge-grid/spawn_button3.png');
+    // The level-up-all button — text, icon and all baked into the one file,
+    // so nothing is drawn over it (see createButtons).
+    A.image('upgrade_button', 'graphics/ui/merge-grid/upgrade_button.png');
     // Grain for the cell faces: neutral grey + blurred noise, blended over the
     // flat colour at bake time (see _makeCellTextures).
     A.image('cell_noise', 'graphics/ui/merge-grid/cell_noise.webp');

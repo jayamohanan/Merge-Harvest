@@ -2387,20 +2387,14 @@ class GameScene extends Phaser.Scene {
         spawnBtn.add(spawnIcon);
         this.spawnButtonIcon = spawnIcon;
 
-        // Level-up button
+        // Level-up button — one sprite, everything baked in (text, icon, the
+        // lot), so it is drawn and wired exactly like any other icon button:
+        // no separate label or fill to keep in step with it.
         const lvlBtn = this.add.container(levelUpButtonX, levelUpButtonY).setDepth(100);
-        const lvlBg  = this.add.rectangle(0, 0,
-            L.spawnBtnDisplayH * 0.8, L.spawnBtnDisplayH * 0.8,
-            hexColor(CONFIG.BUTTON.LEVELUP_COLOR))
-            .setStrokeStyle(CONFIG.BUTTON.LEVELUP_BORDER_WIDTH,
-                hexColor(CONFIG.BUTTON.LEVELUP_BORDER_COLOR))
+        const lvlBg  = this.add.image(0, 0, 'upgrade_button')
+            .setDisplaySize(L.spawnBtnDisplayH * 0.8, L.spawnBtnDisplayH * 0.8)
             .setInteractive({ useHandCursor: true });
-        const lvlUpFontSize = Math.max(12, Math.round(20 * (L.cellSize / CONFIG.CELL.SIZE))) + 'px';
-        const lvlTxt = this.add.text(0, 0, 'LVL UP\nALL', {
-            fontSize: lvlUpFontSize, fontFamily: CONFIG.FONT_FAMILY,
-            align: 'center', color: '#FFFFFF', fontStyle: CONFIG.FONT_WEIGHT,
-        }).setOrigin(0.5);
-        lvlBtn.add([lvlBg, lvlTxt]);
+        lvlBtn.add(lvlBg);
         lvlBg.on('pointerdown', () => { if (this.levelUpButtonVisible) this.levelUpAll(); });
         this.levelUpButton   = lvlBtn;
         this.levelUpButtonBg = lvlBg;
