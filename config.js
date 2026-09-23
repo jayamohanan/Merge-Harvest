@@ -322,7 +322,10 @@ var CONFIG = {
         BATTERY_SCALE: 1.0,
         BATTERY_Y_OFFSET: 5,
         LEVEL_TEXT_SIZE: '11px',
-        LEVEL_TEXT_COLOR: '#000000',
+        // A NEAR-BLACK, not pure black — softer contrast, and the same warm
+        // dark brown already used for label strokes elsewhere (LABEL_STROKE,
+        // CROPS.YIELD_LABEL.STROKE) rather than a second dark tone.
+        LEVEL_TEXT_COLOR: '#2b2013',
         LEVEL_TEXT_Y_OFFSET: 40,   // + is BELOW the icon
 
         // ── PORTRAIT: FILL THE CELL ─────────────────────────────────────────
@@ -372,7 +375,7 @@ var CONFIG = {
                                        // so this is real padding around the cells
                                        // rather than the old art's baked margin
         GRID_PANEL_COLOR: "#ccd5d7",
-        GRID_PANEL_RADIUS: 0,          // sharp corners
+        GRID_PANEL_RADIUS: 15,         // px @ design scale
         GRID_PANEL_BORDER_COLOR: "#364549",
         GRID_PANEL_BORDER_WIDTH: 3,
     },
@@ -462,6 +465,25 @@ var CONFIG = {
         MS:        380,      // one stroke, down and back
         EASE:     'Sine.easeInOut',
         FADE_MS:   260,      // in when it appears, out when a slot is filled
+    },
+
+    // THE PIG, TO THE LEFT OF THE ARROW. Reuses favicon.png (see assets.js)
+    // rather than a new file — the same outline-only pig already drawn for
+    // the browser tab, tinted grey and placed just behind where the arrow's
+    // stroke begins, so together "pig, arrow, slot" reads as "drag this here"
+    // rather than an arrow pointing at nothing in particular.
+    HINT_ICON: {
+        ENABLED:   true,
+        SIZE:      32,       // px @ design scale
+        GAP:       4,        // clearance between the icon and the arrow's
+                             // own tail, px @ design scale
+        // THE ART ITSELF IS NEARLY WHITE (~240,240,240) even fully opaque,
+        // and setTint() MULTIPLIES rather than replaces — so a mid-grey tint
+        // over that pale a source only darkens it to a soft ~145,145,145.
+        // Full ALPHA is what keeps it reading as a solid grey pig instead of
+        // that already-soft colour ALSO being see-through on top of it.
+        TINT:      '#9a9a9a',
+        ALPHA:     1,
     },
 
     // THE PAYOUT, MADE VISIBLE. The player is looking at the merge grid when a
@@ -772,7 +794,9 @@ var CONFIG = {
             ENABLED: true,
             SIZE:    24,     // px @ design scale
             GAP:      4,     // above the plant's crown (px @ design)
-            COLOR:  '#000000',
+            // NEAR-BLACK, not pure black — same as CELL.LEVEL_TEXT_COLOR and
+            // this label's own STROKE below, rather than a harsher pure #000.
+            COLOR:  '#2b2013',
             STROKE: '#ffffff',
             STROKE_W: 0,         // no outline
 
@@ -806,9 +830,18 @@ var CONFIG = {
             // and they are right beside it to compare against.
             TINT:   '#c7c7c7',
             ALPHA:   0.86,
-            MS:      320,   // eased in rather than snapped: it lands on the same
-                            // frame as the last fruit leaving, and two hard
-                            // changes at once read as a glitch
+            // SHRUNK A LITTLE TOO — a spent plant standing at full size but
+            // greyed reads as merely dimmed; a touch smaller reads as
+            // wilted. UNIFORM on both axes, so it settles evenly rather than
+            // squashing sideways or thinning vertically. The plant is
+            // foot-anchored (setOrigin 0.5,1 in buildCrops), so it settles
+            // straight down from its own crown while its feet stay on the
+            // row's ground line.
+            SCALE_FRAC: 0.85,
+            MS:      160,   // halved from 320, twice as fast — eased in rather
+                            // than snapped: it lands on the same frame as the
+                            // last fruit leaving, and two hard changes at once
+                            // read as a glitch
         },
 
         // ── TURNING THE FIELD OVER ──────────────────────────────────────────
@@ -957,7 +990,7 @@ var CONFIG = {
             // bank has no moment of "picked" in it, and the pick is the thing
             // the tick is announcing. Lift, hang, then go.
             FLY: {
-                MS:   220,       // halved from 420, to try a faster harvest
+                MS:   440,       // half speed of the 220 tried earlier — double the duration
                 // ACCELERATING AWAY. The fruit is at rest at the top of its lift
                 // and has to start moving from there; easing IN means it creeps
                 // off, gathers pace and arrives fast, which is what being drawn

@@ -48,6 +48,11 @@ function sharedAssets() {
     // The level-up-all button — text, icon and all baked into the one file,
     // so nothing is drawn over it (see createButtons).
     A.image('upgrade_button', 'graphics/ui/merge-grid/upgrade_button.png');
+    // The pig's own outline — reusing the browser tab's favicon rather than a
+    // second file, tinted grey behind the slot hint's arrow (see
+    // _showSlotHint / CONFIG.HINT_ICON) so the hint reads as "drag the pig
+    // here" instead of a bare arrow.
+    A.image('pig_hint', 'favicon.png');
     // Grain for the cell faces: neutral grey + blurred noise, blended over the
     // flat colour at bake time (see _makeCellTextures).
     A.image('cell_noise', 'graphics/ui/merge-grid/cell_noise.webp');

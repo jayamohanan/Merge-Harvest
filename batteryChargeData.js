@@ -2,11 +2,10 @@
  * BATTERY DATA FILE
  *
  * The pig's own art, and what it's worth. One type only: THE HARVEST ITEMS,
- * levels 1-30, living in graphics/scissor as item_01.png .. item_30.png (the
- * folder name is a leftover from before they were renamed — the art moved,
- * the folder didn't). A level past 30 LOOPS back to item_01 rather than
- * needing new art for every level — see getBatteryIconLevel in config.js,
- * the one place that decides which of the 30 pictures a given level shows.
+ * levels 1-30, living in graphics/item as item_01.png .. item_30.png. A level
+ * past 30 LOOPS back to item_01 rather than needing new art for every level —
+ * see getBatteryIconLevel in config.js, the one place that decides which of
+ * the 30 pictures a given level shows.
  *
  * CHARGE VALUES BY LEVEL:
  * - CHARGE_PER_SECOND_BY_LEVEL: level → charge per second. SEPARATE from the
@@ -25,10 +24,10 @@
 // BATTERY APPEARANCE DATA
 // ==================================================================================
 // One type, thirty positions. folder/ext/pad are this entry's own, because the
-// art lives in graphics/scissor rather than the generic graphics/battery a
+// art lives in graphics/item rather than the generic graphics/battery a
 // second type would default to (see LEVEL_TO_BATTERY_INFO).
 var BATTERY_TYPES = [
-    { name: 'Item', count: 30, folder: 'scissor', ext: 'png', pad: 2 },
+    { name: 'Item', count: 30, folder: 'item', ext: 'png', pad: 2 },
 ];
 var CHARGE_PER_SECOND_BY_LEVEL = {
     1: 5,
@@ -253,7 +252,7 @@ Object.keys(LEVEL_TO_BATTERY_INFO).forEach(level => {
 //   - Charge: 959000 — still its own, real, climbing figure. Charge is never
 //     looped, only the picture is.
 //
-// TO ADD MORE ART: drop item_31.png, item_32.png, … into graphics/scissor and
+// TO ADD MORE ART: drop item_31.png, item_32.png, … into graphics/item and
 // raise this entry's count. The loop point (getHighestBatteryLevel()) moves
 // with it automatically — nothing else to update.
 //

@@ -1501,6 +1501,13 @@ class GameScene extends Phaser.Scene {
             const to   = hexColor(SP.TINT !== undefined ? SP.TINT : '#8f8f8f');
             const a0   = pl.alpha;
             const a1   = SP.ALPHA !== undefined ? SP.ALPHA : 0.72;
+            // BOTH AXES, off whatever scale it is RIGHT NOW rather than a
+            // fixed number — the plant grew in at its own scale (_growPlant)
+            // and this just settles it a little further down from there,
+            // evenly, rather than only along one axis.
+            const sx0  = pl.scaleX, sy0 = pl.scaleY;
+            const frac = SP.SCALE_FRAC !== undefined ? SP.SCALE_FRAC : 0.85;
+            const sx1  = sx0 * frac, sy1 = sy0 * frac;
             const step = { v: 0 };
             this.tweens.add({
                 targets: step, v: 1,
@@ -1510,6 +1517,8 @@ class GameScene extends Phaser.Scene {
                     if (!pl.scene) return;
                     pl.setTint(this._lerpColor(0xffffff, to, step.v));
                     pl.setAlpha(a0 + (a1 - a0) * step.v);
+                    pl.scaleX = sx0 + (sx1 - sx0) * step.v;
+                    pl.scaleY = sy0 + (sy1 - sy0) * step.v;
                 },
             });
         }
@@ -2366,7 +2375,7 @@ class GameScene extends Phaser.Scene {
         this.spawnButtonText = this.add.text(
             L.spawnCoinTextX, 0, this._bigNum(this.spawnCost), {
                 fontSize: L.spawnCoinTextSize, fontFamily: CONFIG.FONT_FAMILY,
-                color: '#FFFFFF', fontStyle: CONFIG.FONT_WEIGHT,
+                color: '#2b2013', fontStyle: CONFIG.FONT_WEIGHT,   // near-black, not pure
             }).setOrigin(0.5);
         const spawnCoinIcon = this.add.image(L.spawnCoinIconX, 0, 'coin')
             .setDisplaySize(L.spawnCoinIconSize, L.spawnCoinIconSize);
@@ -2594,11 +2603,41 @@ class GameScene extends Phaser.Scene {
             const gap   = (H.SIDE_GAP !== undefined ? H.SIDE_GAP : 0.12) * size;
             const x0    = p.slotX - size / 2 - gap - len / 2;
             arrow.setPosition(x0, p.slotY);
-            this.tweens.add({ targets: arrow, x: x0 + run,
+
+            // THE PIG, TO THE LEFT OF THE ARROW — the arrow points right (dir
+            // 'e'), so "pig, then arrow, then slot" is what reads as "drag
+            // the pig in here". Riding along with the arrow's own stroke
+            // (same relative travel, applied to each one's own start) rather
+            // than sitting still, so the two never drift apart. See
+            // CONFIG.HINT_ICON.
+            const HI = CONFIG.HINT_ICON || {};
+            let icon = null;
+            if (HI.ENABLED !== false && this.textures.exists('pig_hint')) {
+                const iconSize = (HI.SIZE !== undefined ? HI.SIZE : 32) * s;
+                const iconGap  = (HI.GAP !== undefined ? HI.GAP : 4) * s;
+                const iconX    = x0 - len / 2 - iconGap - iconSize / 2;
+                icon = this.add.image(iconX, p.slotY, 'pig_hint')
+                    .setDisplaySize(iconSize, iconSize)
+                    .setTint(hexColor(HI.TINT || '#9a9a9a'))
+                    .setDepth(102)   // behind the arrow (103), not under it
+                    .setAlpha(0);
+            }
+
+            // RELATIVE, not an absolute end point — the arrow and the icon
+            // start at different x's (the icon sits to its left), so each
+            // needs to travel the SAME distance from its OWN start rather
+            // than both landing on one shared x.
+            this.tweens.add({ targets: icon ? [arrow, icon] : arrow, x: `+=${run}`,
                 duration: H.MS || 380, ease: H.EASE || 'Sine.easeInOut',
                 yoyo: true, repeat: -1 });
             this.tweens.add({ targets: arrow, alpha: 1,
                 duration: H.FADE_MS !== undefined ? H.FADE_MS : 260 });
+            if (icon) {
+                this.tweens.add({ targets: icon,
+                    alpha: HI.ALPHA !== undefined ? HI.ALPHA : 0.6,
+                    duration: H.FADE_MS !== undefined ? H.FADE_MS : 260 });
+                this.slotHints.push(icon);
+            }
             this.slotHints.push(arrow);
         }
     }
@@ -2713,6 +2752,12 @@ class GameScene extends Phaser.Scene {
         if (bd.draggableBg) bd.draggableBg.setDepth(10000);
         bd.sprite.setDepth(10001);
         bd.levelText.setDepth(10002);
+        // HIDDEN WHILE HELD — "PIGGY 5" following the finger under the drag
+        // adds a second thing to read right where the player is looking at
+        // the art itself. It comes back the moment the drag ends, whatever
+        // the outcome (see onDragEnd) — dropped, swapped, merged or bounced
+        // back, there is always a fresh or restored levelText to show again.
+        bd.levelText.setVisible(false);
         if (this.startOverlay) this.removeStartOverlay();
     }
 
@@ -2734,6 +2779,11 @@ class GameScene extends Phaser.Scene {
     onDragEnd(pointer, gameObject) {
         const bd = gameObject.getData('batteryData');
         if (!bd) return;
+        // BACK ON, before whatever the drop resolves to. A plain move or
+        // swap keeps this same levelText, which needs showing again; a merge
+        // destroys it in favour of a fresh one on the result, which is
+        // visible by default — so unconditionally is correct either way.
+        bd.levelText.setVisible(true);
         const dx = bd.sprite.x;
         const dy = bd.sprite.y;
 
