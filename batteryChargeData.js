@@ -1,29 +1,17 @@
 /**
  * BATTERY DATA FILE
- * 
- * This file contains all battery definitions for the game.
- * 
+ *
+ * The pig's own art, and what it's worth. One type only: THE HARVEST ITEMS,
+ * levels 1-30, living in graphics/scissor as item_01.png .. item_30.png (the
+ * folder name is a leftover from before they were renamed — the art moved,
+ * the folder didn't). A level past 30 LOOPS back to item_01 rather than
+ * needing new art for every level — see getBatteryIconLevel in config.js,
+ * the one place that decides which of the 30 pictures a given level shows.
+ *
  * CHARGE VALUES BY LEVEL:
- * - CHARGE_PER_SECOND_BY_LEVEL: Dictionary mapping level numbers to charge values
- * - Edit this to change charge values for any level
- * - Easy to find and edit specific levels (e.g., level 50 without counting)
- * 
- * BATTERY APPEARANCE DATA:
- * - BATTERY_TYPES: Array of battery type definitions
- * - Each entry has:
- *   - name: Display name for the battery (e.g., "Lamp", "Suitcase", etc.)
- *   - count: Number of sub-types (2 or 3) for that battery
- * - File names are auto-generated from display names
- *   Example: { name: 'Lamp', count: 3 } creates lamp_1.png, lamp_2.png, lamp_3.png
- * 
- * IMPORTANT: Charge values are SEPARATE from battery appearance
- * - You can freely reorder batteries in BATTERY_TYPES without affecting charge values
- * - Charge values are always determined by the player's level, not by battery type
- * 
- * All sprite files should be placed in: graphics/battery/
- * For example: graphics/battery/lamp_1.webp, graphics/battery/suitcase_1.webp
- * 
- * File names are auto-generated: display name → lowercase → spaces to underscores → add _1, _2, _3
+ * - CHARGE_PER_SECOND_BY_LEVEL: level → charge per second. SEPARATE from the
+ *   art on purpose — a level's picture can loop back to item_01 while its
+ *   charge keeps climbing, which is the whole point of the loop.
  */
 
 // ==================================================================================
@@ -36,83 +24,11 @@
 // ==================================================================================
 // BATTERY APPEARANCE DATA
 // ==================================================================================
-// Array of battery types in order. Each entry has:
-//   - name: Display name for the battery
-//   - count: Number of sub-types (2 or 3) - use 2 for faster progression, 3 for more variation
-// 
-// To reorder batteries: Just rearrange this array!
-// To change sub-types: Change count from 3 to 2 (or vice versa)
-// 
-// Example: Entry 1 is 'Jars' with count 3
-//   - Covers levels: 1, 2, 3
-//   - Files: jars_1.png, jars_2.png, jars_3.png
-// Example: Entry 2 is 'Trump' with count 2
-//   - Covers levels: 4, 5
-//   - Files: trump_1.png, trump_2.png
-var BATTERY_TYPES_RESERVE = [
-    { name: 'Socks', count: 3 },
-    { name: 'Feather', count: 3 },
-    { name: 'Scissor', count: 3 },
-    { name: 'Jar', count: 3 },
-    { name: 'Jars', count: 3 },
-    { name: 'Lamp', count: 3 },
-    { name: 'Compass', count: 3 },
-    { name: 'Skirt', count: 3 },
-    { name: 'Palm', count: 3 },
-    { name: 'Book', count: 3 },
-    { name: 'Test Tube', count: 3 },
-    { name: 'Banana', count: 3 },
-    { name: 'Violin', count: 3 },
-    { name: 'Spider', count: 3 },
-    { name: 'Diaper', count: 3 },
-    { name: 'Mask', count: 3 },
-    { name: 'Bishop', count: 3 },
-    { name: 'Turtle', count: 3 },
-    { name: 'Dragon', count: 3 },
-    { name: 'Lion', count: 3 },
-    { name: 'Rat', count: 3 },
-];
+// One type, thirty positions. folder/ext/pad are this entry's own, because the
+// art lives in graphics/scissor rather than the generic graphics/battery a
+// second type would default to (see LEVEL_TO_BATTERY_INFO).
 var BATTERY_TYPES = [
-// THE HARVEST SCISSORS — levels 1-10. Ten icons rather than the usual three to
-// a type, and they live in graphics/scissor as zero-padded PNGs, so this entry
-// carries its own folder, extension and padding (see LEVEL_TO_BATTERY_INFO).
-// They take over exactly ten levels — what Battery, Star, Shield and fire_1
-// held — so every type below keeps the level it already had.
-{ name: 'Scissor', count: 10, folder: 'scissor', ext: 'png', pad: 2 },  // 1  (levels 1-10)
-{ name: 'Fire', count: 2, startAt: 2 },  // 2  (fire_1 went to the scissors)
-{ name: 'Jug', count: 3 },            // 5
-{ name: 'Apple', count: 3 },          // 6
-{ name: 'Mango', count: 3 },          // 7
-{ name: 'Ghost', count: 3 },          // 8
-{ name: 'Camera', count: 3 },         // 9
-{ name: 'Clock', count: 3 },          // 10
-{ name: 'Suitcase', count: 3 },       // 11
-{ name: 'Briefcase', count: 3 },      // 12
-{ name: 'Jerrycan', count: 3 },       // 13
-{ name: 'Piggy Bank', count: 3 },     // 14
-{ name: 'Poop', count: 3 },           // 15
-{ name: 'Burger', count: 3 },         // 16
-{ name: 'Toilet', count: 3 },         // 17
-{ name: 'Snowman', count: 3 },        // 18
-{ name: 'Solar', count: 3 },          // 19
-{ name: 'Butterfly', count: 3 },      // 20
-{ name: 'Dove', count: 3 },           // 21 (Pigeon)
-{ name: 'Frog', count: 3 },           // 22
-{ name: 'Mouse', count: 3 },          // 23
-{ name: 'Rabbit', count: 3 },         // 24
-{ name: 'Octopus', count: 3 },        // 25
-{ name: 'Eagle', count: 3 },          // 26
-{ name: 'Horse Head', count: 3 },     // 27
-{ name: 'Dolphin', count: 3 },        // 28
-{ name: 'Unicorn', count: 3 },        // 29
-{ name: 'Elephant', count: 3 },       // 30
-{ name: 'Baby', count: 3 },           // 31
-{ name: 'Heart', count: 3 },          // 32
-{ name: 'Trump', count: 3 },          // 33
-{ name: 'King', count: 3 },           // 34
-
-    // Add more battery types here as needed
-    // You can also change 'count: 3' to 'count: 2' for any battery type
+    { name: 'Item', count: 30, folder: 'scissor', ext: 'png', pad: 2 },
 ];
 var CHARGE_PER_SECOND_BY_LEVEL = {
     1: 5,
@@ -320,46 +236,26 @@ Object.keys(LEVEL_TO_BATTERY_INFO).forEach(level => {
 });
 
 // ==================================================================================
-// EXAMPLES OF HOW THE NEW SYSTEM WORKS
+// HOW A LEVEL BECOMES A PICTURE
 // ==================================================================================
-// 
-// BATTERY_TYPES is a simple array with index and count:
-//   Index 1: { name: 'Jars', count: 3 } → Levels 1, 2, 3 (jars_1.png, jars_2.png, jars_3.png)
-//   Index 2: { name: 'Trump', count: 3 } → Levels 4, 5, 6 (trump_1.png, trump_2.png, trump_3.png)
-//   Index 3: { name: 'Banana', count: 3 } → Levels 7, 8, 9 (banana_1.png, banana_2.png, banana_3.png)
 //
-// If you change count to 2:
-//   Index 2: { name: 'Trump', count: 2 } → Levels 4, 5 (trump_1.png, trump_2.png)
-//   Index 3: { name: 'Banana', count: 3 } → Levels 6, 7, 8 (banana_1.png, banana_2.png, banana_3.png)
-//
-// EXAMPLE 1: Level 1
-//   - Battery Type: Entry 1 in BATTERY_TYPES ('Jars')
-//   - Display Name: "Jars"
-//   - File Name: "jars_1.png" (position 1 of 3)
+// EXAMPLE — Level 1:
+//   - File: item_01.png (position 1, padded to 2 digits)
 //   - Charge: 5 (from CHARGE_PER_SECOND_BY_LEVEL[1])
 //
-// EXAMPLE 2: Level 6
-//   - Battery Type: Entry 2 in BATTERY_TYPES ('Trump')
-//   - Display Name: "Trump"
-//   - File Name: "trump_3.png" (position 3 of 3)
-//   - Charge: 37 (from CHARGE_PER_SECOND_BY_LEVEL[6])
+// EXAMPLE — Level 30 (the last real position):
+//   - File: item_30.png
+//   - Charge: 639000
 //
-// EXAMPLE 3: Level 19
-//   - Battery Type: Entry 7 in BATTERY_TYPES ('Spider Web')
-//   - Display Name: "Spider Web"
-//   - File Name: "spider_web_1.png" (spaces→underscores, position 1)
-//   - Charge: 7389 (from CHARGE_PER_SECOND_BY_LEVEL[19])
+// EXAMPLE — Level 31 (past the art, so it loops):
+//   - getBatteryIconLevel(31) wraps it to 1 — see config.js
+//   - File: item_01.png, the SAME picture level 1 shows
+//   - Charge: 959000 — still its own, real, climbing figure. Charge is never
+//     looped, only the picture is.
 //
-// TO REORDER BATTERIES:
-// Just rearrange entries in BATTERY_TYPES array!
-// Example: Swap entries 1 and 2 to put Trump before Jars
-//
-// TO CHANGE SUB-TYPE COUNT:
-// Change 'count: 3' to 'count: 2' for faster progression
-// Example: { name: 'Trump', count: 2 } means only trump_1.png and trump_2.png
-//
-// TO REMOVE BATTERIES TO FIT 100 LEVELS:
-// Delete entries from BATTERY_TYPES or adjust their counts
+// TO ADD MORE ART: drop item_31.png, item_32.png, … into graphics/scissor and
+// raise this entry's count. The loop point (getHighestBatteryLevel()) moves
+// with it automatically — nothing else to update.
 //
 // TO CHANGE CHARGE VALUES:
 // Edit CHARGE_PER_SECOND_BY_LEVEL - e.g., to change level 50: just find "50:" and edit the value!

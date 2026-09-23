@@ -1129,9 +1129,22 @@ function loadBatteryImagesFromCache(scene) {
     }
 }
 
+// WHICH OF THE 30 PICTURES a level shows. Past the last real one it WRAPS,
+// not clamps — level 31 shows item_01 again, level 60 shows item_30, level 61
+// wraps back to item_01, and so on forever. This is the one place that
+// decision is made: everywhere else that draws a pig's icon calls this first
+// (see AssetManager and every dressWhenReady call site in game.js), so a
+// change here is a change everywhere at once.
+//
+// The LEVEL NUMBER itself is never touched by this — "PIGGY 61" still reads
+// 61, and its charge is still level 61's own real figure (see
+// getBatteryChargeValue). Only the PICTURE loops; the progression underneath
+// it does not.
 function getBatteryIconLevel(level) {
     const highest = getHighestBatteryLevel();
-    return Math.min(level, highest);
+    if (highest < 1) return level;
+    if (level <= highest) return level;
+    return ((level - 1) % highest) + 1;
 }
 
 // ===================================================================
