@@ -262,10 +262,8 @@ class GameScene extends Phaser.Scene {
         // column now starts at the coin in both orientations, so dropping the
         // panel would only reopen the gap the short column closes.
         const designPanelCY     = designGridBotEdge + panPadRef - designPanH / 2;
-        const designCoinCY      = designPanelCY - designPanH / 2 - coinGapRef;
         const buttonCenterY     = partA.y + designButtonCY * sH;
         const panelCenterY      = partA.y + designPanelCY  * sH;
-        const coinCenterY       = partA.y + designCoinCY   * sH;
 
         // ── The farm half's three plots ───────────────────────────────────────
         // One plot per slot, side by side across the half: the plant with its
@@ -291,6 +289,13 @@ class GameScene extends Phaser.Scene {
         // ── All content sizes that must scale with cellSize ───────────────────
         // Cell gap
         const cellGap           = Math.max(2, Math.round(CONFIG.CELL.GAP * scale));
+        // THE COIN COUNTER HANGS OFF THE PANEL'S REAL TOP EDGE, a size-scaled
+        // gap above it — not at a fraction of the half's height like the
+        // blocks above. On a tall half sH outgrows scale, and a counter placed
+        // by sH drifts up toward the screen's edge, away from the grid it
+        // belongs to.
+        const panHReal    = ROWS * cellSize + (ROWS - 1) * cellGap + 2 * panPad;
+        const coinCenterY = panelCenterY - panHReal / 2 - coinGapRef * scale;
 
         // Battery icon + level text inside grid cells (and platform slots).
         //
@@ -727,6 +732,14 @@ class GameScene extends Phaser.Scene {
         const pigPad = (PG.TOP_PAD !== undefined ? PG.TOP_PAD : 10) * L.scale;
         const pigGap = (PG.GAP     !== undefined ? PG.GAP     : 10) * L.scale;
         const pigH   = Math.round((PG.SIZE !== undefined ? PG.SIZE : 81) * L.scale);
+        // ROOM OVER EACH BANK FOR ITS PAYOUT (see _setPiggyLabel): the row
+        // steps down by the label's height, so TOP_PAD stays the clearance
+        // from the screen's edge to the label, not to the bank.
+        const PLB    = PG.LABEL || {};
+        const pigLblOn = pigOn && PLB.ENABLED !== false;
+        const pigLblH  = (PLB.SIZE !== undefined ? PLB.SIZE : 24) * 1.4 * L.scale;
+        const pigLblGap = (PLB.GAP !== undefined ? PLB.GAP : 2) * L.scale;
+        const pigTop = B.y + pigPad + (pigLblOn ? pigLblH + pigLblGap : 0);
 
         // THE PLOT'S OWN HEIGHT, the yield figure down to the bottom of the
         // rate label under the slot — the rate is part of the plot, and a plot
@@ -746,7 +759,7 @@ class GameScene extends Phaser.Scene {
         // leave the bottom edge, because a slot you cannot read costs more than
         // a bank overlapping a figure.
         if (pigOn) {
-            const floor = B.y + pigPad + pigH + pigGap;
+            const floor = pigTop + pigH + pigGap;
             const lowest = Math.max(B.y, B.y + B.height - plotH);
             top = Math.min(Math.max(top, floor), lowest);
         }
@@ -758,7 +771,7 @@ class GameScene extends Phaser.Scene {
         const FI = CONFIG.FARM_INFO || {};
         this.farmInfoAt = {
             x:      B.x + (FI.LEFT_PAD !== undefined ? FI.LEFT_PAD : 28) * L.scale,
-            top:    pigOn ? B.y + pigPad + pigH : B.y,
+            top:    pigOn ? pigTop + pigH : B.y,
             bottom: top,
         };
 
@@ -803,9 +816,10 @@ class GameScene extends Phaser.Scene {
         // off row.cx instead, pulling the plants in would also drag the
         // banks in a second time, on top of their own SPREAD.
         this.piggyBanks = null;
+        this.piggyLabels = null;
         if (pigOn) {
             const spread = PG.SPREAD !== undefined ? PG.SPREAD : 0.25;
-            const pigY   = B.y + pigPad + pigH / 2;
+            const pigY   = pigTop + pigH / 2;
             // BY HEIGHT, keeping the art's aspect — SIZE is the bank's height
             // because that is what the row is measured with. A width taken from
             // the same figure would squash any bank that is not square.
@@ -815,6 +829,33 @@ class GameScene extends Phaser.Scene {
                 this.add.image(midX + (cx - midX) * spread, pigY, 'piggy_bank')
                     .setDisplaySize(pigW, pigH)
                     .setDepth(PG.DEPTH !== undefined ? PG.DEPTH : 7));
+
+            // THE PAYOUT OVER EACH BANK — the figure and a coin, centred on the
+            // bank, its bottom GAP above the bank's top. Filled in per level by
+            // buildCrops; hidden with the bank when it bursts.
+            this.piggyLabels = pigLblOn ? this.piggyBanks.map((pig) => {
+                const fs  = Math.max(10, Math.round((PLB.SIZE !== undefined ? PLB.SIZE : 24) * L.scale));
+                const cy  = pigTop - pigLblGap - pigLblH / 2;
+                const box = this.add.container(pig.x, cy).setDepth(PG.DEPTH !== undefined ? PG.DEPTH : 7)
+                    .setVisible(false);   // until buildCrops gives it a figure
+                // THE COIN COUNTER'S OWN STYLE — gold fill, same stroke — so a
+                // bank's figure reads as coins at a glance. Its stroke is scaled
+                // down with the smaller type so the outline weighs the same.
+                const CC = CONFIG.COIN_COUNTER || {};
+                const ccFs = Math.max(12, Math.round(29 * 1.3 * L.scale));
+                const text = this.add.text(0, 0, '', {
+                    fontSize: fs + 'px', fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
+                    color: PLB.COLOR || CC.TEXT_COLOR,
+                    stroke: CC.TEXT_STROKE_COLOR,
+                    strokeThickness: Math.max(1, Math.round((CC.TEXT_STROKE_THICKNESS || 0) * fs / ccFs)),
+                }).setOrigin(0, 0.5);
+                const ic  = fs * (PLB.ICON_FRAC !== undefined ? PLB.ICON_FRAC : 1);
+                const icon = this.add.image(0, 0, 'coin').setDisplaySize(ic, ic).setOrigin(0, 0.5);
+                box.add([text, icon]);
+                box.text = text; box.icon = icon;
+                box.iconGap = (PLB.ICON_GAP !== undefined ? PLB.ICON_GAP : 4) * L.scale;
+                return box;
+            }) : null;
         }
 
         this.stationCenterX = this.farmRows[1].cx;
@@ -914,10 +955,19 @@ class GameScene extends Phaser.Scene {
             const depth = F.DEPTH !== undefined ? F.DEPTH : 8;
             this.farmNameText = this.add.text(at.x, 0, '',
                 style(F.NAME_SIZE || 30, F.NAME_COLOR || '#2b2013')).setOrigin(0, 0).setDepth(depth);
+            // THE HARVEST COUNTER is three pieces — the prefix, n, and "/m" —
+            // so n can change without anything else moving (see below).
+            const cs = this.farmHarvStyle = style(F.AREA_SIZE || 24, F.AREA_COLOR || '#5b3a1c');
+            this.farmCountText = this.add.text(at.x, 0, '', cs).setOrigin(0, 0).setDepth(depth);
+            this.farmHarvN     = this.add.text(at.x, 0, '', cs).setOrigin(1, 0).setDepth(depth);
+            this.farmHarvM     = this.add.text(at.x, 0, '', cs).setOrigin(0, 0).setDepth(depth);
             this.farmAreaText = this.add.text(at.x, 0, '',
                 style(F.AREA_SIZE || 24, F.AREA_COLOR || '#5b3a1c')).setOrigin(0, 0).setDepth(depth);
             const alpha = F.ALPHA !== undefined ? F.ALPHA : 1;
             this.farmNameText.setAlpha(alpha);
+            this.farmCountText.setAlpha(alpha);
+            this.farmHarvN.setAlpha(alpha);
+            this.farmHarvM.setAlpha(alpha);
             this.farmAreaText.setAlpha(alpha);
         }
 
@@ -929,6 +979,13 @@ class GameScene extends Phaser.Scene {
             .replace('{n}', Math.floor(lvl)).replace('{crop}', title));
 
         const total = cropValuesFor(lvl).reduce((a, b) => a + b, 0);
+        this.farmCountText.setText(F.COUNT_PREFIX !== undefined ? F.COUNT_PREFIX : 'Crops harvested: ');
+        this.farmHarvM.setText('/' + this._bigNum(total));
+        this.farmHarvTotal = total;
+        // n's COLUMN IS SIZED ONCE PER LEVEL, for the widest n can ever be, and
+        // n is right-aligned inside it — so "/m" is pinned and nothing on the
+        // line shifts as n counts up. See _farmHarvWidth.
+        this.farmHarvW = this._farmHarvWidth(total);
         const perHa = (F.PER_HECTARE || {})[name] || F.DEFAULT_PER_HECTARE || 100000;
         const ha = total / perHa;
         const m2 = Math.round(ha * 10000);
@@ -938,11 +995,52 @@ class GameScene extends Phaser.Scene {
             : `${this._bigNum(Math.max(1, Math.round(ha)))} ha`));
 
         const gap    = (F.LINE_GAP !== undefined ? F.LINE_GAP : 0) * s;
-        const blockH = this.farmNameText.height + gap + this.farmAreaText.height;
+        const blockH = this.farmNameText.height + gap + this.farmCountText.height
+                     + gap + this.farmAreaText.height;
         const room   = Math.max(0, at.bottom - at.top - blockH);
         const y      = at.top + room * (F.POS_FRAC !== undefined ? F.POS_FRAC : 0.3);
+        const yCount = y + this.farmNameText.height + gap;
         this.farmNameText.setPosition(at.x, y);
-        this.farmAreaText.setPosition(at.x, y + this.farmNameText.height + gap);
+        this.farmCountText.setPosition(at.x, yCount);
+        const xN = at.x + this.farmCountText.width + this.farmHarvW;
+        this.farmHarvN.setPosition(xN, yCount);
+        this.farmHarvM.setPosition(xN, yCount);
+        this.farmAreaText.setPosition(at.x, yCount + this.farmCountText.height + gap);
+        this._setFarmHarvested(0);
+    }
+
+    // n, the crops harvested so far this level — the three plants' figures
+    // less what each still holds. Called from harvestCrop on every pick.
+    _setFarmHarvested(n) {
+        if (!this.farmHarvN || !this.farmHarvN.scene) return;
+        if (n === undefined) {
+            n = 0;
+            for (const c of this.crops || []) n += Math.max(0, (c.total || 0) - (c.left || 0));
+        }
+        this.farmHarvN.setText(this._bigNum(Math.min(n, this.farmHarvTotal || n)));
+    }
+
+    // THE WIDEST n CAN BE on its way up to `total`, in the counter's own font.
+    // Not simply m's width: below ABBREV_FROM a figure is written out in full
+    // (999,999) and above it abbreviated (1.2M), so n can be WIDER than m on
+    // the way there. Every form n can take is tried with its digits swapped for
+    // the font's widest digit, and the widest result is the column.
+    _farmHarvWidth(total) {
+        const probe = this.add.text(0, 0, '', this.farmHarvStyle).setVisible(false);
+        const w = (str) => { probe.setText(str); return probe.width; };
+        let widest = '0', dw = 0;
+        for (const d of '0123456789') { const x = w(d); if (x > dw) { dw = x; widest = d; } }
+        const N = CONFIG.NUMBERS || {};
+        const from = N.ABBREV_FROM !== undefined ? N.ABBREV_FROM : 1e6;
+        const forms = [this._bigNum(total)];
+        if (total >= from) forms.push(this._bigNum(from - 1));
+        for (const at of [1e3, 1e6, 1e9, 1e12]) {
+            if (at >= from && at * 1000 <= total) forms.push(this._bigNum(at * 999));
+        }
+        let max = 0;
+        for (const f of forms) max = Math.max(max, w(f.replace(/[0-9]/g, widest)));
+        probe.destroy();
+        return max;
     }
 
     // WHICH CROP A LEVEL GROWS. The list wraps, so the rotation runs for as many
@@ -1117,6 +1215,9 @@ class GameScene extends Phaser.Scene {
                     .setFlipX(flip),
                 fruit: null,                    // put there by _newFruit, below
                 total: yields[i], left: yields[i], done: false,
+                // Whether it can be harvested yet. False while a level turn is
+                // still growing it in — see below and chargeCycle.
+                ready: !grown,
                 label: null, regrow: null,
                 // The tug a pick gives it, and which way the last one went —
                 // they alternate. See _shakePlant.
@@ -1130,10 +1231,19 @@ class GameScene extends Phaser.Scene {
                 root: this._isRoot(name),
             };
             // The first fruit is there from the start — no swell, nothing grew,
-            // the plant simply has one. On a level turn the whole plant grows in
-            // instead, fruit and all, as one thing coming up out of the ground.
-            this._newFruit(crop, false);
-            if (grown) this._growPlant(crop);
+            // the plant simply has one.
+            //
+            // ON A LEVEL TURN IT IS THREE BEATS, IN ORDER: the plant grows in
+            // bare, THEN its first fruit swells onto it, and only once that has
+            // landed does the harvest start. Fruit appearing on a plant still
+            // coming up, or picked before it has finished swelling, reads as the
+            // level starting before it has been put down.
+            if (grown) {
+                this._growPlant(crop, () =>
+                    this._newFruit(crop, true, () => { crop.ready = true; }));
+            } else {
+                this._newFruit(crop, false);
+            }
 
             // THE FIGURE, UNDER THE PLANT'S FEET — measured from the BOX, not
             // from the plant. The box is the part that is the same on every
@@ -1174,6 +1284,10 @@ class GameScene extends Phaser.Scene {
             if (this.platforms[i]) this.platforms[i].crop = crop;
             return crop;
         });
+
+        // Each bank's payout for this level, over it — shown again here since
+        // a bank that burst last level took its label down with it.
+        this.crops.forEach((crop, i) => this._setPiggyLabel(i, this._piggyPayout(crop)));
     }
 
     // ── One pick ─────────────────────────────────────────────────────────────
@@ -1200,6 +1314,7 @@ class GameScene extends Phaser.Scene {
         if (crop.left > 0 && crop.label && crop.label.scene) {
             crop.label.setText(this._bigNum(crop.left));
         }
+        this._setFarmHarvested();
 
         const last = crop.left <= 0;
         const picked = this._pickFruit(crop, last);
@@ -1370,7 +1485,7 @@ class GameScene extends Phaser.Scene {
     // size would start down at the plant's ankles and climb into the canopy.
     // About the centre it swells where fruit actually hangs, which is what lets
     // POP_FROM go as low as it likes.
-    _newFruit(crop, grown) {
+    _newFruit(crop, grown, onDone) {
         const C = CONFIG.CROPS || {}, H = C.PICK || {};
         if (crop.done || !crop.plant || !crop.plant.scene) return null;
         const D = C.DEPTH || {};
@@ -1388,7 +1503,7 @@ class GameScene extends Phaser.Scene {
         const fr = this.add.image(crop.cx, crop.cy, `crop_${crop.name}`, 1)
             .setDisplaySize(crop.w, crop.h).setDepth(rest).setFlipX(!!crop.flip);
         crop.fruit = fr;
-        if (!grown) return fr;
+        if (!grown) { if (onDone) onDone(); return fr; }
 
         // Against the sprite's REST SCALE, which is a fraction — the fruit is
         // sized with setDisplaySize, so tweening to 1 would blow it up to the
@@ -1400,7 +1515,10 @@ class GameScene extends Phaser.Scene {
             targets: fr, scaleX: sx, scaleY: sy,
             duration: H.POP_MS !== undefined ? H.POP_MS : 420,
             ease: H.POP_EASE || 'Back.easeOut',
-            onComplete: () => { if (fr.scene) fr.setScale(sx, sy); },
+            onComplete: () => {
+                if (fr.scene) fr.setScale(sx, sy);
+                if (onDone) onDone();
+            },
         });
         return fr;
     }
@@ -1533,25 +1651,25 @@ class GameScene extends Phaser.Scene {
         this.leafEmitter.emitParticleAt(x, y, L.COUNT !== undefined ? L.COUNT : 9);
     }
 
-    // A new plant coming up. Plant AND fruit together, from a fraction of full
-    // size to it — they are one object as far as this is concerned, and scaling
-    // them apart would have the fruit arrive before the plant it hangs on.
-    //
-    // The PLANT is pinned by its foot, so scaling it up is growth out of the
-    // ground and needs nothing else. The fruit is centred, so it swells where it
-    // hangs. The two origins differ on purpose and this is where it pays.
-    _growPlant(crop) {
+    // A new plant coming up, BARE, from a fraction of full size to it. It is
+    // pinned by its foot, so scaling it up is growth out of the ground and
+    // needs nothing else. `onDone` fires once it stands at full size — that is
+    // when buildCrops swells its first fruit onto it.
+    _growPlant(crop, onDone) {
         const N = (CONFIG.CROPS || {}).NEXT_LEVEL || {};
         const from = N.FROM !== undefined ? N.FROM : 0.2;
         const ms   = N.GROW_MS !== undefined ? N.GROW_MS : 460;
-        for (const o of [crop.plant, crop.fruit]) {
-            if (!o || !o.scene) continue;
-            const sx = o.scaleX, sy = o.scaleY;
-            o.setScale(sx * from, sy * from);
-            this.tweens.add({ targets: o, scaleX: sx, scaleY: sy,
-                duration: ms, ease: N.GROW_EASE || 'Back.easeOut',
-                onComplete: () => { if (o.scene) o.setScale(sx, sy); } });
-        }
+        const o = crop.plant;
+        if (!o || !o.scene) { if (onDone) onDone(); return; }
+        const sx = o.scaleX, sy = o.scaleY;
+        o.setScale(sx * from, sy * from);
+        this.tweens.add({ targets: o, scaleX: sx, scaleY: sy,
+            duration: ms, ease: N.GROW_EASE || 'Back.easeOut',
+            onComplete: () => {
+                if (!o.scene) return;
+                o.setScale(sx, sy);
+                if (onDone) onDone();
+            } });
     }
 
     // The plant's figure has reached zero. IT KEEPS STANDING — bare — because a
@@ -1650,11 +1768,30 @@ class GameScene extends Phaser.Scene {
     // `onComplete` fires once the coins this cashes in have actually reached
     // the counter — it is how _cropFullyBanked knows the level is safe to
     // turn over, so every exit from this function has to call it eventually.
+    // What a plant's bank pays when it bursts — the one figure both the burst
+    // and the label over the bank read, so the two cannot disagree.
+    _piggyPayout(crop) {
+        const PG = (CONFIG.CROPS || {}).PIGGY || {};
+        return Math.max(1, Math.round(
+            (crop.total || 0) * (PG.PAYOUT_MULT !== undefined ? PG.PAYOUT_MULT : 1)));
+    }
+
+    // The figure over bank `i`, and the coin beside it, re-centred on the bank
+    // as a pair so a longer number never pushes the coin off-centre.
+    _setPiggyLabel(i, amount) {
+        const box = this.piggyLabels && this.piggyLabels[i];
+        if (!box || !box.scene) return;
+        box.text.setText(this._bigNum(amount));
+        const w = box.text.width + box.iconGap + box.icon.displayWidth;
+        box.text.setX(-w / 2);
+        box.icon.setX(-w / 2 + box.text.width + box.iconGap);
+        box.setVisible(true);
+    }
+
     _explodePiggy(crop, onComplete) {
         const PG = (CONFIG.CROPS || {}).PIGGY || {};
         if (PG.ENABLED === false) { if (onComplete) onComplete(); return; }
-        const amount = Math.max(1, Math.round(
-            (crop.total || 0) * (PG.PAYOUT_MULT !== undefined ? PG.PAYOUT_MULT : 1)));
+        const amount = this._piggyPayout(crop);
 
         const pig = this.piggyBanks && this.piggyBanks[crop.row];
         const E   = PG.EXPLODE || {};
@@ -1730,6 +1867,8 @@ class GameScene extends Phaser.Scene {
                 ease: E.BURST_EASE || 'Quad.easeIn',
                 onComplete: () => {
                     if (pig.scene) pig.setVisible(false).setScale(rx, ry).setAlpha(1);
+                    const lbl = this.piggyLabels && this.piggyLabels[crop.row];
+                    if (lbl && lbl.scene) lbl.setVisible(false);
                     this._woodChipBurst(ox, oy, pig.displayHeight, pig.depth);
                     // THE COINS. Scattered across the whole screen — the merge
                     // grid included — then swept to the counter; this is the
@@ -2234,7 +2373,9 @@ class GameScene extends Phaser.Scene {
             // even the pulse, because a battery flashing over bare ground says
             // it is still delivering when it is not.
             const crop = (this.platforms[i] || {}).crop;
-            if (!crop || crop.done) continue;
+            // Nor while the plant is still growing in on a level turn: the
+            // harvest waits for its first fruit to have landed.
+            if (!crop || crop.done || !crop.ready) continue;
             this._pulseBatteryIcon(this.platforms[i]);
             this.harvestCrop(crop, slot.chargePerMinute);
         }
@@ -3425,6 +3566,8 @@ class GameScene extends Phaser.Scene {
                                : C.TOP_SPEED_DURATION;
         const gap    = scatter ? (S.STAGGER !== undefined ? S.STAGGER : 26)
                                : C.STAGGER_DELAY;
+        // The size a coin lands at, as a fraction of its flying size.
+        const arrive = C.ARRIVE_FRAC !== undefined ? C.ARRIVE_FRAC : 1.1;
         this.time.delayedCall(delayBeforeFly + settle, () => {
             coins.forEach((coin, i) => {
                 // Scatter: one duration and (with STAGGER 0) one start, so every
@@ -3435,7 +3578,7 @@ class GameScene extends Phaser.Scene {
                     if (!coin.scene) return; // Already destroyed
                     this.tweens.add({
                         targets: coin, x: tX, y: tY,
-                        displayWidth: size * 0.55, displayHeight: size * 0.55,
+                        displayWidth: size * arrive, displayHeight: size * arrive,
                         duration: dur, ease: C.EASE,
                         onComplete: () => {
                             coin.destroy();

@@ -502,7 +502,9 @@ var CONFIG = {
         REWARD_COIN_SIZE: 64,          // px @ design scale; the counter's own
                                        // icon is 40, so these arrive larger than
                                        // the thing they land on and shrink into it
-        BURST_RADIUS: 55,              // how far they scatter first, px @ design
+        ARRIVE_FRAC: 1.1,              // the size a coin LANDS at on the counter,
+                                       // as a fraction of its flying size (was 0.55)
+        BURST_RADIUS: 55,             // how far they scatter first, px @ design
         BURST_MS:     260,             // …and how long that throw takes
         TOP_SPEED_DURATION: 600,
         SPEED_VARIATION: 0.15,
@@ -658,12 +660,17 @@ var CONFIG = {
         AREA_SIZE: 18,
         LINE_GAP:  0,           // extra space between the two lines
         NAME_FORMAT: '{n}. {crop} Farm',   // {n} = level, {crop} = crop name
+        COUNT_PREFIX: 'Crops harvested: ',  // the line above the area, read
+                                    // as n/m: crops picked so far this level
+                                    // over the level's three plant figures
+                                    // added up
         AREA_PREFIX: 'Area: ',  // before the figure, so it reads as a size and
                                 // not a score. '' for the bare figure
         NAME_COLOR: '#6b4c2c',  // mid brown, not the near-black of the figures
         AREA_COLOR: '#7d5f3e',
         ALPHA:     0.85,
-        DEPTH:     8,
+        DEPTH:     1,          // under every crop layer (root produce is 2),
+                                // so flying produce passes OVER the text
         // Display names where title-casing the file name is not right.
         NAMES: {
             'egg-plant':     'Eggplant',
@@ -1046,6 +1053,17 @@ var CONFIG = {
             // of them into each other. Spread and size have to be tuned as a
             // pair — if SIZE rises again, this has to come up with it.
             SPREAD: 0.5,
+            // THE PAYOUT OVER EACH BANK: what it pays in coins when it bursts
+            // (the plant's figure × PAYOUT_MULT), with a coin beside it. Hidden
+            // with the bank as it goes; back with the next level's banks.
+            LABEL: {
+                ENABLED:   true,
+                SIZE:      24,       // px @ design scale
+                GAP:       2,        // label bottom → bank top (px @ design)
+                ICON_FRAC: 1,        // coin height as a fraction of SIZE
+                ICON_GAP:  4,        // figure → coin (px @ design)
+                // Colour and stroke come from COIN_COUNTER, so the two match.
+            },
             DEPTH:  7,      // OVER the flying fruit (CROPS.DEPTH.PICKED = 6), so
                             // produce vanishes INTO the bank rather than on top
                             // of it, and under the yield figures (8)
