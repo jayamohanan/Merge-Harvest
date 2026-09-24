@@ -32,6 +32,7 @@ rsync -a \
   --include '/graphics/item/*.webp' \
   --exclude '/graphics/item/*' \
   --exclude '.git' \
+  --exclude '.github' \
   --exclude '.gitignore' \
   --exclude '.claude' \
   --exclude '.DS_Store' \
