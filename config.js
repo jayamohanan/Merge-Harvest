@@ -128,8 +128,8 @@ var CONFIG = {
         // showing through (set on the Phaser game config in game.js). Keeping
         // this the same value makes the seam between the two halves disappear
         // instead of reading as two different panels.
-        GRADIENT_START_COLOR: "#d0b288",
-        GRADIENT_END_COLOR: "#d0b288",
+        GRADIENT_START_COLOR: "#d5ba95",
+        GRADIENT_END_COLOR: "#d5ba95",
         // HOW OPAQUE THE PANEL CARD IS. It was 0 while the farm's own ground
         // sheet ran under both halves and was the better background; that sheet
         // went with the farm, so the card is what the UI half is made of now.
@@ -665,7 +665,9 @@ var CONFIG = {
         NAME_SIZE: 22,          // px @ design scale
         AREA_SIZE: 18,
         LINE_GAP:  0,           // extra space between the two lines
-        NAME_FORMAT: '{n}. {crop} Farm',   // {n} = level, {crop} = crop name
+        TOTAL_FRAC:  0.7,           // "/{total}" at this fraction of NAME_SIZE
+        NAME_FORMAT: 'Level {n}/{total}. {crop} Farm',   // {n} = level, {total} = how
+                                    // many levels (CROP_VALUES rows), {crop} = name
         COUNT_PREFIX: 'Crops harvested: ',  // the line above the area, read
                                     // as n/m: crops picked so far this level
                                     // over the level's three plant figures

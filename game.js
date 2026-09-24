@@ -1019,7 +1019,8 @@ class GameScene extends Phaser.Scene {
         const ease  = R.EASE || 'Cubic.easeInOut';
 
         const prev  = old.level > 1 ? this._makeFarmInfoBlock(old.level - 1) : null;
-        const after = this._makeFarmInfoBlock(lvl + 1);
+        // Nothing after the last level, so the reel's bottom slot stays empty.
+        const after = lvl < CROP_VALUES.length ? this._makeFarmInfoBlock(lvl + 1) : null;
         this.tweens.killTweensOf(old);
         old.setPosition(at.x, slotY(0)).setScale(1).setAlpha(full);
         const place = (b, k) => { if (b) b.setPosition(at.x, slotY(k)).setScale(sideS).setAlpha(0); };
@@ -1043,8 +1044,10 @@ class GameScene extends Phaser.Scene {
             };
             go(prev,  -2, sideS, 0, () => { if (prev && prev.scene) prev.destroy(); });
             go(old,   -1, sideS, sideA);
-            go(next,   0, 1,     full);
-            go(after,  1, sideS, sideA, () => {
+            go(after,  1, sideS, sideA);
+            // The close hangs off the NEW CENTRE's slide — it is always there,
+            // where the block under it is not on the last level.
+            go(next,   0, 1,     full, () => {
                 // 3. HOLD, THEN CLOSE back to the one block in the window.
                 if (turn !== this.farmInfoTurn) return;
                 const sides = [old, after].filter((b) => b && b.scene);
@@ -1085,8 +1088,36 @@ class GameScene extends Phaser.Scene {
             || name.split(/[-_ ]+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
         // The level's own number, so the run reads as a count of farms — the
         // crop list wraps, and "Tomato Farm" alone would repeat every 16 levels.
-        const nameT = this.add.text(0, 0, (F.NAME_FORMAT || '{n}. {crop} Farm')
-            .replace('{n}', Math.floor(lvl)).replace('{crop}', title), nameStyle);
+        // {total} is how many levels there are — one per row of CROP_VALUES.
+        //
+        // "/{total}" IS SET SMALLER than the level number beside it: it is the
+        // same on every level, so it steps back and the number that changes
+        // leads. The line is cut into three texts at "/{total}" — before, the
+        // small total, after — laid end to end on one baseline, so the small
+        // figure sits on the same line rather than floating at its top.
+        const fill = (str) => str.replace('{n}', Math.floor(lvl))
+            .replace('{total}', CROP_VALUES.length).replace('{crop}', title);
+        const fmt   = F.NAME_FORMAT || 'Level {n}/{total}. {crop} Farm';
+        const cut   = fmt.indexOf('/{total}');
+        const parts = cut < 0 ? [[fmt, 1]]
+            : [[fmt.slice(0, cut), 1], ['/{total}', F.TOTAL_FRAC !== undefined ? F.TOTAL_FRAC : 0.7],
+               [fmt.slice(cut + '/{total}'.length), 1]];
+        const nameBits = [];
+        let nx = 0;
+        for (const [str, k] of parts) {
+            if (!str) continue;
+            const st = k === 1 ? nameStyle
+                : this._farmInfoStyle((F.NAME_SIZE || 30) * k, F.NAME_COLOR || '#2b2013');
+            const tx = this.add.text(nx, 0, fill(str), st);
+            nx += tx.width;
+            nameBits.push(tx);
+        }
+        // ON ONE BASELINE: each piece dropped by how much less ascent it has
+        // than the tallest, so the letters of every size stand on one line.
+        const asc   = (b) => (b.getTextMetrics ? b.getTextMetrics().ascent : b.height);
+        const top   = Math.max(...nameBits.map(asc));
+        for (const b of nameBits) b.y = top - asc(b);
+        const nameT = { height: Math.max(...nameBits.map((b) => b.y + b.height)) };
 
         const total = cropValuesFor(lvl).reduce((a, b) => a + b, 0);
         const y1    = nameT.height + gap;
@@ -1104,7 +1135,7 @@ class GameScene extends Phaser.Scene {
                 ? `${this._bigNum(Math.max(1, m2))} m²`
                 : `${this._bigNum(Math.max(1, Math.round(ha)))} ha`), cs);
 
-        const box = this.add.container(0, 0, [nameT, pre, nT, mT, areaT])
+        const box = this.add.container(0, 0, [...nameBits, pre, nT, mT, areaT])
             .setDepth(F.DEPTH !== undefined ? F.DEPTH : 8);
         box.level     = lvl;
         box.harvN     = nT;
@@ -2591,7 +2622,7 @@ class GameScene extends Phaser.Scene {
         // margin and shadow around the nine cells, which cost vertical space the
         // half does not have to spare.
         const C     = CONFIG.CELL;
-        const panel = this.add.graphics().setDepth(1.5);
+        const panel = this.add.graphics().setDepth(3.4);   // over the farm slots (3), so the slot hint can pass UNDER the grid while still over its own slot
         const radius = Math.round(C.GRID_PANEL_RADIUS * L.scale);
         const border = Math.max(1, Math.round(C.GRID_PANEL_BORDER_WIDTH * L.scale));
         panel.fillStyle(hexColor(C.GRID_PANEL_COLOR), 1);
@@ -2616,7 +2647,7 @@ class GameScene extends Phaser.Scene {
                 const face = (key, visible) => this.add.image(x, y, key)
                     .setDisplaySize(this.CELL_SIZE, this.CELL_SIZE)
                     .setFlipX(fx).setFlipY(fy)
-                    .setDepth(2).setVisible(visible);
+                    .setDepth(3.5).setVisible(visible);
                 const emptyCell = face('cell_empty',  true);
                 const filledBg  = face('cell_filled', false);
 
@@ -2986,7 +3017,7 @@ class GameScene extends Phaser.Scene {
                     len * (H.W_FRAC !== undefined ? H.W_FRAC : 1.35),
                     P.FILL_COLOR || '#ffd251', P.STROKE_COLOR || '#6d5727',
                     (P.STROKE_WIDTH || 3) * s)
-                .setDepth(103).setAlpha(0);
+                .setDepth(3.3).setAlpha(0);   // over the slot (3), UNDER the grid (3.4)
             // IT CROSSES THE SLOT'S EDGE rather than hovering outside it. The
             // crossing is what reads as "in here" instead of "over there".
             const run = (H.TRAVEL !== undefined ? H.TRAVEL : 0.193) * size;
@@ -3012,7 +3043,7 @@ class GameScene extends Phaser.Scene {
                     icon = this.add.image(p.slotX, iconY, 'pig_hint')
                         .setDisplaySize(iconSize, iconSize)
                         .setTint(hexColor(HI.TINT || '#9a9a9a'))
-                        .setDepth(102)   // behind the arrow (103), not under it
+                        .setDepth(3.25)   // behind the arrow (3.3), and under the grid
                         .setAlpha(0);
                 }
                 // RELATIVE, and UP is minus-Y — each starts at its own y, so
@@ -3029,7 +3060,7 @@ class GameScene extends Phaser.Scene {
                     icon = this.add.image(iconX, p.slotY, 'pig_hint')
                         .setDisplaySize(iconSize, iconSize)
                         .setTint(hexColor(HI.TINT || '#9a9a9a'))
-                        .setDepth(102)
+                        .setDepth(3.25)
                         .setAlpha(0);
                 }
                 // RELATIVE, not an absolute end point — the arrow and the
@@ -3826,7 +3857,7 @@ const config = {
     // The canvas's own clear colour — what shows wherever nothing is drawn,
     // which since the panel's corners were rounded means those four notches.
     // Matched to the page behind it so the two cannot be told apart.
-    backgroundColor: '#d0b288',
+    backgroundColor: '#d5ba95',
     scene: [GameScene],
     scale: {
         // FIT/ENVELOP means Phaser owns the canvas's DISPLAY size and keeps it
