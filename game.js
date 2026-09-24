@@ -1,6 +1,23 @@
 // Piggy's Harvest — main game scene
 // No physics engine — pure drag/drop merge, with the farm half showing the crop
 
+// AN ITEM'S ART CAN RUN PAST ITS PIG. The pig face is the top-left
+// CELL.ICON_PIG_PX square of the texture; the rest of the canvas (the tool) is
+// allowed out of the icon box. So the ORIGIN goes on the pig's centre — the
+// sprite is still placed at the box's centre and the pig lands exactly there —
+// and the size is set so that square, not the whole canvas, is pigW × pigH.
+function itemPigOrigin(spr) {
+    const P = CONFIG.CELL.ICON_PIG_PX || 128;
+    const f = spr.frame;
+    return spr.setOrigin(Math.min(1, P / 2 / f.realWidth), Math.min(1, P / 2 / f.realHeight));
+}
+function fitItemIcon(spr, pigW, pigH) {
+    const P = CONFIG.CELL.ICON_PIG_PX || 128;
+    const f = spr.frame;
+    itemPigOrigin(spr);
+    return spr.setDisplaySize(pigW * f.realWidth / P, pigH * f.realHeight / P);
+}
+
 class AssetManager {
     constructor(scene) {
         this.scene = scene;
@@ -66,14 +83,13 @@ class AssetManager {
     // Draw `spr` as `iconLvl` as soon as that art is in hand. Safe to call for a
     // texture already loaded — it simply sets it.
     dressWhenReady(spr, iconLvl) {
-        // setTexture keeps the sprite's SCALE, not the size it was drawn at, so
-        // art on a different canvas to the placeholder's would land at the
-        // wrong size — the cell was fitted to a number of pixels, not to a
-        // multiplier. Put the size back after every swap.
+        // setTexture keeps the sprite's SCALE, and every item's pig is the
+        // same ICON_PIG_PX square — so the same scale keeps the pig the same
+        // size on any canvas, and a bigger canvas just spills further out. Only
+        // the origin has to follow the new canvas (see fitItemIcon).
         const wear = (key) => {
-            const w = spr.displayWidth, h = spr.displayHeight;
             spr.setTexture(key);
-            spr.setDisplaySize(w, h);
+            itemPigOrigin(spr);
         };
         const key = `battery${iconLvl}`;
         if (this.scene.textures.exists(key)) { wear(key); return; }
@@ -2465,7 +2481,7 @@ class GameScene extends Phaser.Scene {
         const batterySprite = this.add.image(p.slotX, p.slotY + yOff,
             this.assets.iconKey(batteryIconLevel));
         this.assets.dressWhenReady(batterySprite, batteryIconLevel);
-        batterySprite.setDisplaySize(this.slotBatteryW, this.slotBatteryH);
+        fitItemIcon(batterySprite, this.slotBatteryW, this.slotBatteryH);
         batterySprite.setDepth(11);
 
         const levelText = this.add.text(p.slotX, p.slotY + yOff + tOff, `PIGGY ${level}`, {
@@ -2703,9 +2719,8 @@ class GameScene extends Phaser.Scene {
         // BUILT NOW, whatever art is to hand (see AssetManager.iconKey). The
         // cell is filled on this frame, so nothing can be dropped into it while
         // a picture downloads.
-        const battery = this.add.image(cell.x, cell.y + this.batteryYOffset,
-                this.assets.iconKey(iconLvl))
-            .setDisplaySize(this.batteryDisplayW, this.batteryDisplayH)
+        const battery = fitItemIcon(this.add.image(cell.x, cell.y + this.batteryYOffset,
+                this.assets.iconKey(iconLvl)), this.batteryDisplayW, this.batteryDisplayH)
             .setDepth(11);
         this.assets.dressWhenReady(battery, iconLvl);
 
@@ -2795,8 +2810,8 @@ class GameScene extends Phaser.Scene {
         // dressed in its own when that lands — the button is pressable from the
         // first frame, so its icon must be there from the first frame too.
         const iconLvl = getBatteryIconLevel(this.spawnButtonLevel);
-        const spawnIcon = this.add.image(L.spawnBattIconX, 0, this.assets.iconKey(iconLvl))
-            .setDisplaySize(L.spawnBattIconSize, L.spawnBattIconSize);
+        const spawnIcon = fitItemIcon(this.add.image(L.spawnBattIconX, 0, this.assets.iconKey(iconLvl)),
+            L.spawnBattIconSize, L.spawnBattIconSize);
         this.assets.dressWhenReady(spawnIcon, iconLvl);
         spawnBtn.add(spawnIcon);
         this.spawnButtonIcon = spawnIcon;
@@ -3157,7 +3172,7 @@ class GameScene extends Phaser.Scene {
                 this.spawnButtonText.setText(this._bigNum(this.spawnCost));
                 const iconLvl = getBatteryIconLevel(nl);
                 if (this.spawnButtonIcon) {
-                    this.spawnButtonIcon.setTexture(this.assets.iconKey(iconLvl));
+                    itemPigOrigin(this.spawnButtonIcon.setTexture(this.assets.iconKey(iconLvl)));
                     this.assets.dressWhenReady(this.spawnButtonIcon, iconLvl);
                 }
             }
@@ -3592,7 +3607,7 @@ class GameScene extends Phaser.Scene {
             if (bd.inGrid) {
                 bd.level += 1;
                 bd.levelText.setText(`PIGGY ${bd.level}`);
-                bd.sprite.setTexture(`battery${getBatteryIconLevel(bd.level)}`);
+                itemPigOrigin(bd.sprite.setTexture(`battery${getBatteryIconLevel(bd.level)}`));
                 if (bd.level > this.highestBatteryLevel) this.highestBatteryLevel = bd.level;
             }
         }
@@ -3603,7 +3618,7 @@ class GameScene extends Phaser.Scene {
                 slot.level += 1;
                 slot.chargePerMinute = getBatteryChargeValue(slot.level);
                 if (slot.batteryData) slot.batteryData.level = slot.level;
-                if (p.batterySprite)    p.batterySprite.setTexture(`battery${getBatteryIconLevel(slot.level)}`);
+                if (p.batterySprite)    itemPigOrigin(p.batterySprite.setTexture(`battery${getBatteryIconLevel(slot.level)}`));
                 if (p.batteryLevelText) p.batteryLevelText.setText(`PIGGY ${slot.level}`);
                 p.chargeRateText.setText(this._bigNum(slot.chargePerMinute));
             }
@@ -3795,6 +3810,24 @@ class GameScene extends Phaser.Scene {
     // ================================================================
     update(time, delta) {
         if (!this._firstFrameMarked) { this._firstFrameMarked = true; loadMark('first frame — create() finished'); }
+        // DEBUG: light boxes over the space each item's sprite and its level
+        // text take up, drawn under both (sprite 11, text 12).
+        if (!this.itemBoundsDbg || !this.itemBoundsDbg.scene) {
+            this.itemBoundsDbg = this.add.graphics().setDepth(10.5);
+        }
+        const g = this.itemBoundsDbg.clear();
+        const slotItems = (this.chargingSlots || []).filter(Boolean).map((s) => s.batteryData);
+        for (const bd of [...(this.batteries || []), ...slotItems]) {
+            if (!bd) continue;
+            if (bd.sprite && bd.sprite.scene && bd.sprite.visible) {
+                const r = bd.sprite.getBounds();
+                g.fillStyle(0xbfe3ff, 0.6).fillRect(r.x, r.y, r.width, r.height);
+            }
+            if (bd.levelText && bd.levelText.scene && bd.levelText.visible) {
+                const r = bd.levelText.getBounds();
+                g.fillStyle(0xfff3b0, 0.75).fillRect(r.x, r.y, r.width, r.height);
+            }
+        }
         if (this.gamePaused) return;
         // Nothing to step. Everything that moves on screen is tween- or
         // timer-driven, and _setPaused stops those directly.

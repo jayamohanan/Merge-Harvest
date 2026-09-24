@@ -325,6 +325,11 @@ var CONFIG = {
         // square — measure the file rather than guessing, because too large a
         // number here shrinks the icon to fit a width it does not need.
         ICON_ASPECT: 1,
+        // THE PIG IS THE TOP-LEFT ICON_PIG_PX SQUARE of every item's art, in
+        // the file's own pixels. That square is what fills the cell's icon box;
+        // anything the canvas has past it (the tool) spills out over the edges
+        // at the same scale rather than being squeezed in. See fitItemIcon.
+        ICON_PIG_PX: 128,
         BATTERY_DISPLAY_SIZE: 64,
         BATTERY_SCALE: 1.0,
         BATTERY_Y_OFFSET: 5,
