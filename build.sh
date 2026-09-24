@@ -24,7 +24,13 @@ OUT=build
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
+# THE ITEM ART SHIPS AS WEBP ONLY. graphics/item also holds the PNG masters and
+# working subfolders; only the top-level .webp files are what the game loads.
+# Anchored with a leading / so it means this one folder. First match wins, so
+# these two must stay ahead of everything else.
 rsync -a \
+  --include '/graphics/item/*.webp' \
+  --exclude '/graphics/item/*' \
   --exclude '.git' \
   --exclude '.gitignore' \
   --exclude '.claude' \
@@ -38,6 +44,7 @@ rsync -a \
   --exclude '*.md' \
   --exclude 'sounds' \
   --exclude 'untitled folder' \
+  --exclude '/graphics/ui/piggy_bank2.png' \
   ./ "$OUT/"
 
 # ── START THE OPENING ART WITH THE PAGE ────────────────────────────────────────
@@ -113,8 +120,9 @@ fi
 # them, and the build's index.html gets one tag in place of five. The project's
 # files and its index.html are never touched.
 #
-# Joined as a PLAIN script, not a module. game.js used to load as a module, but
-# it uses nothing a module provides (no import, no export), while the others
+# Joined as a PLAIN script, not a module. The project's index.html still loads
+# game.js as a module, but it uses nothing a module provides (no import, no
+# export), while the others
 # were written as plain scripts — and a module runs in strict mode, which would
 # hold them to rules they were never checked against. As a plain script
 # everything runs exactly as they always have.

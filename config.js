@@ -120,7 +120,7 @@ var CONFIG = {
     },
 
     BATTERY_START_LEVEL: 1,
-    BATTERY_IMAGE_EXTENSIONS: ['svg', 'png', 'jpg', 'webp'],
+    BATTERY_IMAGE_EXTENSIONS: ['webp'],
 
      BACKGROUND: {
         // MATCHED TO THE FARM HALF'S OWN GROUND — partB (the crops) has no
@@ -474,14 +474,14 @@ var CONFIG = {
         FADE_MS:   260,      // in when it appears, out when a slot is filled
     },
 
-    // THE PIG, TO THE LEFT OF THE ARROW. Reuses favicon.png (see assets.js)
-    // rather than a new file — the same outline-only pig already drawn for
-    // the browser tab, tinted grey and placed just behind where the arrow's
+    // THE PIG, TO THE LEFT OF THE ARROW. graphics/ui/merge-grid/piggy_icon.png
+    // (see assets.js) — an outline-only pig, tinted grey and placed just
+    // behind where the arrow's
     // stroke begins, so together "pig, arrow, slot" reads as "drag this here"
     // rather than an arrow pointing at nothing in particular.
     HINT_ICON: {
         ENABLED:   true,
-        SIZE:      32,       // px @ design scale
+        SIZE:      48,       // px @ design scale
         GAP:       4,        // clearance between the icon and the arrow's
                              // own tail, px @ design scale
         // THE ART ITSELF IS NEARLY WHITE (~240,240,240) even fully opaque,
@@ -560,8 +560,10 @@ var CONFIG = {
         SLOT_SIZE: 130,                // reference slot square (px) — the ratio
                                        // every slot-derived size is measured in
         SLOT_RADIUS: 15,               // corner radius (px)
-        CHARGE_RATE_GAP: 10,           // gap (px) between a slot's top edge and
-                                       // the charge-rate figure above it
+        CHARGE_RATE_GAP: 2,            // gap (px) between a slot's bottom edge
+                                       // and the charge-rate figure under it.
+                                       // The font's own top padding adds to
+                                       // this on screen
 
         // The rate on each slot. Was black type on a white outline — the one
         // place in the game that ran that way round — which put it at odds with
@@ -587,7 +589,7 @@ var CONFIG = {
             //
             // Nothing else may sit in this gap — the rate label went UNDER the
             // slot when the plant took the space above it.
-            SLOT_GAP: 16,
+            SLOT_GAP: 24,
             // HOW WIDE A PLOT MAY GROW inside its third of the farm half. The
             // three stand side by side across the half, so this is what keeps
             // a gap between one plot and the next: the plant is shrunk to fit
@@ -638,6 +640,57 @@ var CONFIG = {
     // second frame left off.
     //
     // Scenery for now — nothing grows it and nothing picks it.
+    // ── THE FARM'S NAME AND SIZE ─────────────────────────────────────────────
+    // "<Crop> Farm" and its area, left-aligned in the farm half between the
+    // piggy banks and the plants. The area is the level's three plant figures
+    // added up, over PER_HECTARE — roughly how many of that crop one hectare
+    // grows for real (yield in t/ha over the weight of one). Under 1 ha it is
+    // shown in m² (1 ha = 10,000 m²), otherwise in whole hectares.
+    FARM_INFO: {
+        ENABLED:   true,
+        LEFT_PAD:  28,          // px @ design scale, from the half's left edge
+        POS_FRAC:  0.3,         // where in the bank→plant gap: 0 = against the
+                                // banks, 1 = against the plants
+        // QUIET ON PURPOSE: this is context, not a readout — it never changes
+        // during a level, so it is smaller and lower-contrast than the figures
+        // the player is actually watching.
+        NAME_SIZE: 22,          // px @ design scale
+        AREA_SIZE: 18,
+        LINE_GAP:  0,           // extra space between the two lines
+        NAME_FORMAT: '{n}. {crop} Farm',   // {n} = level, {crop} = crop name
+        AREA_PREFIX: 'Area: ',  // before the figure, so it reads as a size and
+                                // not a score. '' for the bare figure
+        NAME_COLOR: '#6b4c2c',  // mid brown, not the near-black of the figures
+        AREA_COLOR: '#7d5f3e',
+        ALPHA:     0.85,
+        DEPTH:     8,
+        // Display names where title-casing the file name is not right.
+        NAMES: {
+            'egg-plant':     'Eggplant',
+            'chilly-pepper': 'Chilli Pepper',
+        },
+        // Produce per hectare — fruits, heads, ears or tubers.
+        PER_HECTARE: {
+            'tomato':         600000,   // ~60 t/ha, ~100 g each
+            'corn':            60000,   // ~1 ear per plant
+            'egg-plant':      250000,
+            'melon':           20000,   // ~1.5 kg each
+            'potato':         250000,   // tubers
+            'bell-pepper':    200000,
+            'onion':          300000,
+            'pumpkin':          5000,   // ~5 kg each
+            'strawberry':    1500000,   // ~15 g each
+            'sunflower':       50000,   // heads
+            'banana':         300000,   // fingers
+            'chilly-pepper': 2000000,   // ~5 g each
+            'pineapple':       50000,
+            'broccoli':        40000,   // heads
+            'cabbage':         35000,
+            'lettuce':         60000,
+        },
+        DEFAULT_PER_HECTARE: 100000,   // any crop not listed above
+    },
+
     CROPS: {
         ENABLED: true,
         DIR: 'graphics/crop/',
@@ -809,7 +862,8 @@ var CONFIG = {
         YIELD_LABEL: {
             ENABLED: true,
             SIZE:    31,     // px @ design scale — 24 × 1.3
-            GAP:      4,     // above the plant's crown (px @ design)
+            GAP:      4,     // UNUSED — the figure now sits under the plant,
+                             // off PLATFORM.CHARGE_RATE_GAP like the slot's
             // NEAR-BLACK, not pure black — same as CELL.LEVEL_TEXT_COLOR and
             // this label's own STROKE below, rather than a harsher pure #000.
             COLOR:  '#2b2013',
@@ -1175,8 +1229,8 @@ function loadBatteryImagesFromCache(scene) {
     }
 }
 
-// WHICH OF THE 30 PICTURES a level shows. Past the last real one it WRAPS,
-// not clamps — level 31 shows item_01 again, level 60 shows item_30, level 61
+// WHICH OF THE 28 PICTURES a level shows. Past the last real one it WRAPS,
+// not clamps — level 29 shows item_01 again, level 56 shows item_28, level 57
 // wraps back to item_01, and so on forever. This is the one place that
 // decision is made: everywhere else that draws a pig's icon calls this first
 // (see AssetManager and every dressWhenReady call site in game.js), so a

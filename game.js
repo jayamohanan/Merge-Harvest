@@ -125,9 +125,10 @@ class GameScene extends Phaser.Scene {
         this.firstLevelUpTimer  = true;
         this.mergeTutorialShown = false;
         this.mergePointer       = null;
-        this.slotHints          = null;   // the "put one here" arrows
+        this.slotHints          = null;   // the "put one here" arrows, per slot
         this.slotHintPending    = false;  // …scheduled but not yet up
-        this.slotHintDone       = false;  // …shown and finished with
+        this.slotHintDone       = false;  // …every slot has had its first pig
+        this.slotHintSeen       = [false, false, false];  // …per slot: had its first pig
         this.isWatchingAd = false;  // Flag to block interactions during ad
 
         this.CELL_SIZE  = CONFIG.CELL.SIZE;
@@ -703,12 +704,12 @@ class GameScene extends Phaser.Scene {
         const slotGap = s(FS.SLOT_GAP !== undefined ? FS.SLOT_GAP : 16);
         const colW    = B.width / 3;
 
-        // HEADROOM FOR THE FIGURE over the plant's head — the plot starts
-        // above the plant, not at it, or the number would be cut off by the
-        // half's own edge. Taken from the label's own size so it cannot drift
-        // out of step with it.
+        // ROOM FOR THE FIGURE under the plant's feet — it sits between the
+        // plant and its slot, the same gap off the plant's ground line that
+        // the rate label keeps off the slot's bottom edge. Taken from the
+        // label's own size so it cannot drift out of step with it.
         const YL   = (CONFIG.CROPS || {}).YIELD_LABEL || {};
-        const head = ((YL.SIZE || 24) + (YL.GAP !== undefined ? YL.GAP : 4)) * L.scale;
+        const head = (YL.SIZE || 24) * L.scale + s(P.CHARGE_RATE_GAP);
 
         // THE PIGGY BANKS ARE FURNITURE, NOT PART OF THE PLOT. They hang off
         // the TOP EDGE of the half on a small pad — a UI row that stays put,
@@ -750,6 +751,17 @@ class GameScene extends Phaser.Scene {
             top = Math.min(Math.max(top, floor), lowest);
         }
 
+        // THE BAND THE FARM'S NAME AND SIZE SIT IN: under the banks, over the
+        // plants, starting from the half's left edge. Held here with the
+        // geometry that decides it; the text itself changes with the crop, so
+        // buildCrops fills it in (see _updateFarmInfo).
+        const FI = CONFIG.FARM_INFO || {};
+        this.farmInfoAt = {
+            x:      B.x + (FI.LEFT_PAD !== undefined ? FI.LEFT_PAD : 28) * L.scale,
+            top:    pigOn ? B.y + pigPad + pigH : B.y,
+            bottom: top,
+        };
+
         // Where each plot's plant centres — its column's middle, and the one
         // line they all stand on. Held here, with the geometry that decides
         // it, so buildCrops cannot place a plant anywhere else.
@@ -772,7 +784,7 @@ class GameScene extends Phaser.Scene {
             ? (FS.SIDE_SPREAD_FRAC !== undefined ? FS.SIDE_SPREAD_FRAC : 0.7) : 1;
         this.farmRows = [0, 1, 2].map((i) => ({
             cx: midX + (colCx[i] - midX) * spreadFrac,
-            cy: top + head + box.h / 2,
+            cy: top + box.h / 2,
         }));
 
         // ── THE BANKS ─────────────────────────────────────────────────────
@@ -819,15 +831,16 @@ class GameScene extends Phaser.Scene {
             // between a plant's feet and its slot is the same on every plot
             // however tall the crop of the moment happens to be.
             const slotX  = this.farmRows[i].cx;
-            const slotYi = this.farmRows[i].cy + box.h / 2 + slotGap + ssz / 2;
+            const slotYi = this.farmRows[i].cy + box.h / 2 + head + slotGap + ssz / 2;
 
-            // Empty and filled are two drawings of the same square, swapped
-            // rather than redrawn: the empty one is an outline, the filled one
-            // the grained face the grid uses.
+            // The empty square, stroke and all, stays up the whole time; filling
+            // the slot lays the grid's grained face over its INSIDE only, sized
+            // to the stroke's inner edge, so the stroke never goes away.
             const slotBg = this.add.graphics();
             this._drawSlot(slotBg, slotX, slotYi, ssz, false);
             slotBg.setDepth(3);
-            const face = Math.round(ssz - 2 * Math.max(2, ssz * 4 / CONFIG.CELL.SIZE));
+            const strokeW = Math.max(1, Math.round(CONFIG.CELL.INSET_BORDER_WIDTH * ssz / CONFIG.PLATFORM.SLOT_SIZE));
+            const face = Math.round(ssz - 2 * strokeW);
             const slotBgFilled = this.add.image(slotX, slotYi, 'cell_face')
                 .setDisplaySize(face, face).setDepth(3).setVisible(false);
 
@@ -877,6 +890,59 @@ class GameScene extends Phaser.Scene {
     _isRoot(name) {
         const list = (CONFIG.CROPS || {}).ROOT || [];
         return list.indexOf(name) >= 0;
+    }
+
+    // ── THE FARM'S NAME AND SIZE ─────────────────────────────────────────────
+    // "Tomato Farm", and the land it would take to grow this level's harvest
+    // for real: the three plants' figures added up, over what one hectare of
+    // that crop yields (FARM_INFO.PER_HECTARE). Under a hectare it is given in
+    // m² instead, so the opening plots read as the garden beds they are rather
+    // than as "0 ha". Both lines left-aligned, placed in the band between the
+    // banks and the plants, nearer the banks (POS_FRAC).
+    _updateFarmInfo(lvl, name) {
+        const F  = CONFIG.FARM_INFO || {};
+        const at = this.farmInfoAt;
+        if (F.ENABLED === false || !at) return;
+        const s = this.layoutConfig.scale;
+        const style = (size, color) => ({
+            fontSize: Math.max(10, Math.round(size * s)) + 'px',
+            fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT, color,
+        });
+        // Made once and re-texted on each level; a scene rebuild destroys them,
+        // which is what the .scene check catches.
+        if (!this.farmNameText || !this.farmNameText.scene) {
+            const depth = F.DEPTH !== undefined ? F.DEPTH : 8;
+            this.farmNameText = this.add.text(at.x, 0, '',
+                style(F.NAME_SIZE || 30, F.NAME_COLOR || '#2b2013')).setOrigin(0, 0).setDepth(depth);
+            this.farmAreaText = this.add.text(at.x, 0, '',
+                style(F.AREA_SIZE || 24, F.AREA_COLOR || '#5b3a1c')).setOrigin(0, 0).setDepth(depth);
+            const alpha = F.ALPHA !== undefined ? F.ALPHA : 1;
+            this.farmNameText.setAlpha(alpha);
+            this.farmAreaText.setAlpha(alpha);
+        }
+
+        const title = (F.NAMES || {})[name]
+            || name.split(/[-_ ]+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        // The level's own number, so the run reads as a count of farms — the
+        // crop list wraps, and "Tomato Farm" alone would repeat every 16 levels.
+        this.farmNameText.setText((F.NAME_FORMAT || '{n}. {crop} Farm')
+            .replace('{n}', Math.floor(lvl)).replace('{crop}', title));
+
+        const total = cropValuesFor(lvl).reduce((a, b) => a + b, 0);
+        const perHa = (F.PER_HECTARE || {})[name] || F.DEFAULT_PER_HECTARE || 100000;
+        const ha = total / perHa;
+        const m2 = Math.round(ha * 10000);
+        const pre = F.AREA_PREFIX !== undefined ? F.AREA_PREFIX : 'Area: ';
+        this.farmAreaText.setText(pre + (m2 < 10000
+            ? `${this._bigNum(Math.max(1, m2))} m²`
+            : `${this._bigNum(Math.max(1, Math.round(ha)))} ha`));
+
+        const gap    = (F.LINE_GAP !== undefined ? F.LINE_GAP : 0) * s;
+        const blockH = this.farmNameText.height + gap + this.farmAreaText.height;
+        const room   = Math.max(0, at.bottom - at.top - blockH);
+        const y      = at.top + room * (F.POS_FRAC !== undefined ? F.POS_FRAC : 0.3);
+        this.farmNameText.setPosition(at.x, y);
+        this.farmAreaText.setPosition(at.x, y + this.farmNameText.height + gap);
     }
 
     // WHICH CROP A LEVEL GROWS. The list wraps, so the rotation runs for as many
@@ -937,6 +1003,7 @@ class GameScene extends Phaser.Scene {
         if (!name || !this.textures.exists(`crop_${name}`)) return;
 
         const s = this.layoutConfig.scale;
+        this._updateFarmInfo(lvl, name);
 
         // THE BOX, and where the plants stand in it — both decided in
         // createSlots, because a plant and the slot under it are laid out as
@@ -1068,21 +1135,21 @@ class GameScene extends Phaser.Scene {
             this._newFruit(crop, false);
             if (grown) this._growPlant(crop);
 
-            // THE FIGURE, OVER THE PLANT'S HEAD — measured from the BOX, not
+            // THE FIGURE, UNDER THE PLANT'S FEET — measured from the BOX, not
             // from the plant. The box is the part that is the same on every
             // level, so a label hung off it keeps its line when the crop
             // changes; hung off the plant it would step up and down with each
             // new sheet's proportions.
             const Y = C.YIELD_LABEL || {};
             if (Y.ENABLED !== false) {
-                crop.label = this.add.text(cx, row.cy - boxH / 2 - (Y.GAP !== undefined ? Y.GAP : 4) * s,
+                crop.label = this.add.text(cx, row.cy + boxH / 2 + CONFIG.PLATFORM.CHARGE_RATE_GAP * this.platformScale,
                     this._bigNum(crop.left), {
                         fontSize: Math.max(10, Math.round((Y.SIZE || 24) * s)) + 'px',
                         fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
                         color: Y.COLOR || '#ffffff',
                         stroke: Y.STROKE || '#2b2013',
                         strokeThickness: Math.round((Y.STROKE_W !== undefined ? Y.STROKE_W : 4) * s),
-                    }).setOrigin(0.5, 1).setDepth(D.LABEL);
+                    }).setOrigin(0.5, 0).setDepth(D.LABEL);
                 if (grown) {
                     const N = C.NEXT_LEVEL || {};
                     crop.label.setAlpha(0);
@@ -2103,7 +2170,6 @@ class GameScene extends Phaser.Scene {
             color: CONFIG.CELL.LEVEL_TEXT_COLOR, fontStyle: CONFIG.FONT_WEIGHT,
         }).setOrigin(0.5).setDepth(12);
 
-        p.slotBg.setVisible(false);
         p.slotBgFilled.setVisible(true);
         p.batterySprite    = batterySprite;
         p.batteryLevelText = levelText;
@@ -2121,7 +2187,7 @@ class GameScene extends Phaser.Scene {
         };
         draggableBg.setData('batteryData', batteryData);
         this.chargingSlots[slotIndex] = { level, chargePerMinute, batteryData };
-        this._hideSlotHint();
+        this._hideSlotHint(slotIndex);
     }
 
     removeBatteryFromSlot(slotIndex) {
@@ -2393,7 +2459,7 @@ class GameScene extends Phaser.Scene {
         const spawnButtonX = L.partA.x + L.partA.width / 2;
         const spawnButtonY = L.buttonCenterY;
         // Level-up sits to the left of spawn at the same Y (horizontal gap × sW)
-        const levelUpButtonX = spawnButtonX - L.spawnBtnDisplayW / 2 - 20 * L.sW - L.spawnBtnDisplayH * 0.4;
+        const levelUpButtonX = spawnButtonX - L.spawnBtnDisplayW / 2 - 20 * L.sW - L.spawnBtnDisplayH * 0.44;
         const levelUpButtonY = spawnButtonY;
 
         // Spawn button
@@ -2430,7 +2496,7 @@ class GameScene extends Phaser.Scene {
         // no separate label or fill to keep in step with it.
         const lvlBtn = this.add.container(levelUpButtonX, levelUpButtonY).setDepth(100);
         const lvlBg  = this.add.image(0, 0, 'upgrade_button')
-            .setDisplaySize(L.spawnBtnDisplayH * 0.8, L.spawnBtnDisplayH * 0.8)
+            .setDisplaySize(L.spawnBtnDisplayH * 0.88, L.spawnBtnDisplayH * 0.88)
             .setInteractive({ useHandCursor: true });
         lvlBtn.add(lvlBg);
         lvlBg.on('pointerdown', () => { if (this.levelUpButtonVisible) this.levelUpAll(); });
@@ -2608,10 +2674,13 @@ class GameScene extends Phaser.Scene {
         const H = CONFIG.SLOT_HINT || {};
         if (H.ENABLED === false || this.slotHintDone || this.slotHints) return;
         if (!this.platforms) return;
-        // Not if the player got there first — three seconds is long enough for
-        // someone who already understood to have filled a slot, and an arrow
-        // pointing at a job already done is worse than no arrow.
-        if (this._anySlotFilled()) { this.slotHintDone = true; return; }
+        // PER SLOT: one already filled has had its lesson, and an arrow
+        // pointing at a job already done is worse than no arrow. The others
+        // keep theirs until each gets its own first pig.
+        for (let i = 0; i < 3; i++) {
+            if (this.chargingSlots && this.chargingSlots[i]) this.slotHintSeen[i] = true;
+        }
+        if (this.slotHintSeen.every(Boolean)) { this.slotHintDone = true; return; }
 
         const s = this.layoutConfig.scale;
         const P = CONFIG.POINTER || {};
@@ -2626,9 +2695,10 @@ class GameScene extends Phaser.Scene {
         // pig sits lowest, the arrow above it points up into the slot, and
         // the pair rides upward together instead of sideways.
         const portrait = this.isPortrait;
-        this.slotHints = [];
-        for (const p of this.platforms) {
-            if (!p || p.slotX === undefined) continue;
+        this.slotHints = [null, null, null];
+        this.platforms.forEach((p, i) => {
+            if (!p || p.slotX === undefined || this.slotHintSeen[i]) return;
+            const lot = this.slotHints[i] = [];
             const size = p.slotSize || (100 * s);
             // DRAWN, rather than drawn
             // ON: one shape, one outline, no art file, and it turns to face
@@ -2698,10 +2768,10 @@ class GameScene extends Phaser.Scene {
                 this.tweens.add({ targets: icon,
                     alpha: HI.ALPHA !== undefined ? HI.ALPHA : 0.6,
                     duration: H.FADE_MS !== undefined ? H.FADE_MS : 260 });
-                this.slotHints.push(icon);
+                lot.push(icon);
             }
-            this.slotHints.push(arrow);
-        }
+            lot.push(arrow);
+        });
     }
 
     // ONE ARROW, DRAWN. A filled triangle with an outline, its apex on the
@@ -2727,20 +2797,17 @@ class GameScene extends Phaser.Scene {
         return g;
     }
 
-    _anySlotFilled() {
-        for (let i = 0; i < 3; i++) if (this.chargingSlots && this.chargingSlots[i]) return true;
-        return false;
-    }
-
-    // Gone for good once a battery is in. `slotHintDone` is what stops it coming
-    // back when a slot is later emptied — the lesson was learnt, and a hint that
-    // returns reads as the game not having noticed.
-    _hideSlotHint() {
-        this.slotHintDone = true;
-        if (!this.slotHints) return;
+    // Gone for good from THIS slot once its first battery is in; the other
+    // slots keep theirs. `slotHintSeen` is what stops it coming back when the
+    // slot is later emptied — the lesson was learnt, and a hint that returns
+    // reads as the game not having noticed.
+    _hideSlotHint(slotIndex) {
+        this.slotHintSeen[slotIndex] = true;
+        if (this.slotHintSeen.every(Boolean)) this.slotHintDone = true;
+        const lot = this.slotHints && this.slotHints[slotIndex];
+        if (!lot) return;
+        this.slotHints[slotIndex] = null;
         const H = CONFIG.SLOT_HINT || {};
-        const lot = this.slotHints;
-        this.slotHints = null;
         for (const img of lot) {
             if (!img || !img.scene) continue;
             this.tweens.killTweensOf(img);
@@ -3080,7 +3147,6 @@ class GameScene extends Phaser.Scene {
             const p  = this.platforms[bd.slotIndex];
             const cpm = getBatteryChargeValue(bd.level);
             this.chargingSlots[bd.slotIndex] = { level: bd.level, chargePerMinute: cpm, batteryData: bd };
-            p.slotBg.setVisible(false);
             p.slotBgFilled.setVisible(true);
             p.batterySprite    = bd.sprite;
             p.batteryLevelText = bd.levelText;
@@ -3163,19 +3229,6 @@ class GameScene extends Phaser.Scene {
             .setDepth(10000)
             .setInteractive();  // Block clicks from passing through overlay
         
-        // "REWARD IN PROGRESS", sat just above the countdown — the number
-        // alone read as a bare timer with nothing to say what it was
-        // counting down TO. Static for the whole wait; only the number below
-        // it moves.
-        const rewardText = this.add.text(W / 2,
-                H / 2 - (A.REWARD_TEXT_GAP !== undefined ? A.REWARD_TEXT_GAP : 20),
-                A.REWARD_TEXT || 'Reward in progress', {
-            fontSize: A.REWARD_TEXT_SIZE || '40px',
-            fontFamily: CONFIG.FONT_FAMILY,
-            color: A.REWARD_TEXT_COLOR || '#FFFFFF',
-            fontStyle: CONFIG.FONT_WEIGHT,
-        }).setOrigin(0.5, 1).setDepth(10001);
-
         // Create countdown timer text in center
         const timerText = this.add.text(W / 2, H / 2, `${A.DURATION}`, {
             fontSize: A.TIMER_TEXT_SIZE,
@@ -3183,6 +3236,22 @@ class GameScene extends Phaser.Scene {
             color: A.TIMER_TEXT_COLOR,
             fontStyle: CONFIG.FONT_WEIGHT,
         }).setOrigin(0.5).setDepth(10001);
+
+        // "REWARD IN PROGRESS", sat just above the countdown — the number
+        // alone read as a bare timer with nothing to say what it was
+        // counting down TO. Static for the whole wait; only the number below
+        // it moves. Measured off the number's own TOP edge, not the screen's
+        // centre line: the number is centred there, so its top half would
+        // otherwise run straight through this line.
+        const rewardText = this.add.text(W / 2,
+                timerText.y - timerText.height / 2
+                    - (A.REWARD_TEXT_GAP !== undefined ? A.REWARD_TEXT_GAP : 20),
+                A.REWARD_TEXT || 'Reward in progress', {
+            fontSize: A.REWARD_TEXT_SIZE || '40px',
+            fontFamily: CONFIG.FONT_FAMILY,
+            color: A.REWARD_TEXT_COLOR || '#FFFFFF',
+            fontStyle: CONFIG.FONT_WEIGHT,
+        }).setOrigin(0.5, 1).setDepth(10001);
 
         // Countdown from AD.DURATION to 0
         let timeLeft = A.DURATION;

@@ -2,10 +2,10 @@
  * BATTERY DATA FILE
  *
  * The pig's own art, and what it's worth. One type only: THE HARVEST ITEMS,
- * levels 1-30, living in graphics/item as item_01.png .. item_30.png. A level
- * past 30 LOOPS back to item_01 rather than needing new art for every level —
+ * levels 1-28, living in graphics/item as item_01.webp .. item_28.webp. A level
+ * past 28 LOOPS back to item_01 rather than needing new art for every level —
  * see getBatteryIconLevel in config.js, the one place that decides which of
- * the 30 pictures a given level shows.
+ * the 28 pictures a given level shows.
  *
  * CHARGE VALUES BY LEVEL:
  * - CHARGE_PER_SECOND_BY_LEVEL: level → charge per second. SEPARATE from the
@@ -23,11 +23,11 @@
 // ==================================================================================
 // BATTERY APPEARANCE DATA
 // ==================================================================================
-// One type, thirty positions. folder/ext/pad are this entry's own, because the
+// One type, twenty-eight positions. folder/ext/pad are this entry's own, because the
 // art lives in graphics/item rather than the generic graphics/battery a
 // second type would default to (see LEVEL_TO_BATTERY_INFO).
 var BATTERY_TYPES = [
-    { name: 'Item', count: 30, folder: 'item', ext: 'png', pad: 2 },
+    { name: 'Item', count: 28, folder: 'item', ext: 'webp', pad: 2 },
 ];
 var CHARGE_PER_SECOND_BY_LEVEL = {
     1: 5,
@@ -239,20 +239,19 @@ Object.keys(LEVEL_TO_BATTERY_INFO).forEach(level => {
 // ==================================================================================
 //
 // EXAMPLE — Level 1:
-//   - File: item_01.png (position 1, padded to 2 digits)
+//   - File: item_01.webp (position 1, padded to 2 digits)
 //   - Charge: 5 (from CHARGE_PER_SECOND_BY_LEVEL[1])
 //
-// EXAMPLE — Level 30 (the last real position):
-//   - File: item_30.png
-//   - Charge: 639000
+// EXAMPLE — Level 28 (the last real position):
+//   - File: item_28.webp
 //
-// EXAMPLE — Level 31 (past the art, so it loops):
-//   - getBatteryIconLevel(31) wraps it to 1 — see config.js
-//   - File: item_01.png, the SAME picture level 1 shows
-//   - Charge: 959000 — still its own, real, climbing figure. Charge is never
+// EXAMPLE — Level 29 (past the art, so it loops):
+//   - getBatteryIconLevel(29) wraps it to 1 — see config.js
+//   - File: item_01.webp, the SAME picture level 1 shows
+//   - Charge: still its own, real, climbing figure. Charge is never
 //     looped, only the picture is.
 //
-// TO ADD MORE ART: drop item_31.png, item_32.png, … into graphics/item and
+// TO ADD MORE ART: drop item_29.webp, item_30.webp, … into graphics/item and
 // raise this entry's count. The loop point (getHighestBatteryLevel()) moves
 // with it automatically — nothing else to update.
 //
