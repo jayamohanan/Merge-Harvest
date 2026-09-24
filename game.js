@@ -758,9 +758,29 @@ class GameScene extends Phaser.Scene {
         // instead — but never past the point where its own rate labels would
         // leave the bottom edge, because a slot you cannot read costs more than
         // a bank overlapping a figure.
+        //
+        // PORTRAIT STANDS ON THE DIVIDING LINE instead: the slots' rate labels
+        // sit just above the line between the two halves, a small LINE_GAP off
+        // it, and the slots and plants come down with them. The banks do NOT
+        // follow — they stay pinned to the top — so the room this frees opens
+        // up between the plants and the banks. Measured off the label's REAL
+        // height (a probe in its own style) rather than the estimate in
+        // `tail`, since it is what has to clear the line.
+        let lowest = Math.max(B.y, B.y + B.height - plotH);
+        if (this.isPortrait) {
+            const SR = P.SLOT_RATE || {};
+            const probe = this.add.text(0, 0, '0', {
+                fontSize, fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
+                strokeThickness: Math.round((SR.STROKE_W !== undefined ? SR.STROKE_W : 3) * scale),
+            });
+            const labelH = probe.height;
+            probe.destroy();
+            const lineGap = s(FS.PORTRAIT_LINE_GAP !== undefined ? FS.PORTRAIT_LINE_GAP : 6);
+            top = lowest = B.y + B.height - lineGap - labelH
+                         - s(P.CHARGE_RATE_GAP) - ssz - slotGap - head - box.h;
+        }
         if (pigOn) {
             const floor = pigTop + pigH + pigGap;
-            const lowest = Math.max(B.y, B.y + B.height - plotH);
             top = Math.min(Math.max(top, floor), lowest);
         }
 
@@ -825,10 +845,19 @@ class GameScene extends Phaser.Scene {
             // the same figure would squash any bank that is not square.
             const src  = this.textures.get('piggy_bank').get(0);
             const pigW = src && src.height ? pigH * (src.width / src.height) : pigH;
-            this.piggyBanks = colCx.map((cx) =>
-                this.add.image(midX + (cx - midX) * spread, pigY, 'piggy_bank')
+            this.piggyBanks = colCx.map((cx) => {
+                const pig = this.add.image(midX + (cx - midX) * spread, pigY, 'piggy_bank')
                     .setDisplaySize(pigW, pigH)
-                    .setDepth(PG.DEPTH !== undefined ? PG.DEPTH : 7));
+                    .setDepth(PG.DEPTH !== undefined ? PG.DEPTH : 7);
+                // Full size — the LARGE bank. buildCrops sizes each one down
+                // from this per level (see _sizePiggyBanks).
+                pig.baseScaleX = pig.restScaleX = pig.scaleX;
+                pig.baseScaleY = pig.restScaleY = pig.scaleY;
+                return pig;
+            });
+            // The line the banks STAND on, so a smaller one sits on the same
+            // floor as a larger one rather than floating at its centre.
+            this.pigRow = { bottom: pigTop + pigH, lblGap: pigLblGap, lblH: pigLblH };
 
             // THE PAYOUT OVER EACH BANK — the figure and a coin, centred on the
             // bank, its bottom GAP above the bank's top. Filled in per level by
@@ -934,90 +963,166 @@ class GameScene extends Phaser.Scene {
     }
 
     // ── THE FARM'S NAME AND SIZE ─────────────────────────────────────────────
-    // "Tomato Farm", and the land it would take to grow this level's harvest
-    // for real: the three plants' figures added up, over what one hectare of
-    // that crop yields (FARM_INFO.PER_HECTARE). Under a hectare it is given in
-    // m² instead, so the opening plots read as the garden beds they are rather
-    // than as "0 ha". Both lines left-aligned, placed in the band between the
-    // banks and the plants, nearer the banks (POS_FRAC).
-    _updateFarmInfo(lvl, name) {
+    // "1. Tomato Farm", the harvest counter, and the land it would take to grow
+    // this level's harvest for real: the three plants' figures added up, over
+    // what one hectare of that crop yields (FARM_INFO.PER_HECTARE). Under a
+    // hectare it is given in m² instead, so the opening plots read as the
+    // garden beds they are rather than as "0 ha". Left-aligned, placed in the
+    // band between the banks and the plants, nearer the banks (POS_FRAC).
+    //
+    // A REEL, NOT A LABEL. Each level is a block in a column: last level's
+    // above, this one in the window, the next one below — only this one shown
+    // during play. On a level turn the window opens to all three, the column
+    // slides up one block (the finished farm to the top, the new one into the
+    // centre, the one after it rising in at the bottom, the oldest leaving over
+    // the top), holds, and closes back to the one. See FARM_INFO.REEL.
+    _updateFarmInfo(lvl, grown) {
         const F  = CONFIG.FARM_INFO || {};
+        const R  = F.REEL || {};
         const at = this.farmInfoAt;
         if (F.ENABLED === false || !at) return;
-        const s = this.layoutConfig.scale;
-        const style = (size, color) => ({
-            fontSize: Math.max(10, Math.round(size * s)) + 'px',
-            fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT, color,
-        });
-        // Made once and re-texted on each level; a scene rebuild destroys them,
-        // which is what the .scene check catches.
-        if (!this.farmNameText || !this.farmNameText.scene) {
-            const depth = F.DEPTH !== undefined ? F.DEPTH : 8;
-            this.farmNameText = this.add.text(at.x, 0, '',
-                style(F.NAME_SIZE || 30, F.NAME_COLOR || '#2b2013')).setOrigin(0, 0).setDepth(depth);
-            // THE HARVEST COUNTER is three pieces — the prefix, n, and "/m" —
-            // so n can change without anything else moving (see below).
-            const cs = this.farmHarvStyle = style(F.AREA_SIZE || 24, F.AREA_COLOR || '#5b3a1c');
-            this.farmCountText = this.add.text(at.x, 0, '', cs).setOrigin(0, 0).setDepth(depth);
-            this.farmHarvN     = this.add.text(at.x, 0, '', cs).setOrigin(1, 0).setDepth(depth);
-            this.farmHarvM     = this.add.text(at.x, 0, '', cs).setOrigin(0, 0).setDepth(depth);
-            this.farmAreaText = this.add.text(at.x, 0, '',
-                style(F.AREA_SIZE || 24, F.AREA_COLOR || '#5b3a1c')).setOrigin(0, 0).setDepth(depth);
-            const alpha = F.ALPHA !== undefined ? F.ALPHA : 1;
-            this.farmNameText.setAlpha(alpha);
-            this.farmCountText.setAlpha(alpha);
-            this.farmHarvN.setAlpha(alpha);
-            this.farmHarvM.setAlpha(alpha);
-            this.farmAreaText.setAlpha(alpha);
+
+        // A turn still running is finished at once rather than fought: the
+        // blocks it was moving go, and this turn starts from a clean column.
+        for (const b of this.farmInfoTransient || []) {
+            this.tweens.killTweensOf(b);
+            if (b.scene) b.destroy();
         }
+        this.farmInfoTransient = [];
+        const turn = this.farmInfoTurn = (this.farmInfoTurn || 0) + 1;
+
+        const old  = this.farmInfo && this.farmInfo.scene ? this.farmInfo : null;
+        const next = this._makeFarmInfoBlock(lvl);
+        if (!next) return;
+        this.farmInfo = next;
+
+        const full   = F.ALPHA !== undefined ? F.ALPHA : 1;
+        const room   = Math.max(0, at.bottom - at.top - next.blockH);
+        const centre = at.top + room * (F.POS_FRAC !== undefined ? F.POS_FRAC : 0.3);
+        const pitch  = next.blockH * (R.PITCH_FRAC !== undefined ? R.PITCH_FRAC : 1);
+        const slotY  = (k) => centre + k * pitch;
+
+        // No turn to show — the first build, a rebuild, or the reel switched
+        // off: the block simply stands in the window.
+        if (!grown || !old || R.ENABLED === false) {
+            if (old) { this.tweens.killTweensOf(old); old.destroy(); }
+            next.setPosition(at.x, centre).setScale(1).setAlpha(full);
+            return;
+        }
+
+        const sideS = R.SIDE_SCALE !== undefined ? R.SIDE_SCALE : 0.8;
+        const sideA = full * (R.SIDE_ALPHA !== undefined ? R.SIDE_ALPHA : 0.45);
+        const inMs  = R.SHOW_MS  !== undefined ? R.SHOW_MS  : 220;
+        const slide = R.SLIDE_MS !== undefined ? R.SLIDE_MS : 520;
+        const hold  = R.HOLD_MS  !== undefined ? R.HOLD_MS  : 700;
+        const outMs = R.HIDE_MS  !== undefined ? R.HIDE_MS  : 260;
+        const ease  = R.EASE || 'Cubic.easeInOut';
+
+        const prev  = old.level > 1 ? this._makeFarmInfoBlock(old.level - 1) : null;
+        const after = this._makeFarmInfoBlock(lvl + 1);
+        this.tweens.killTweensOf(old);
+        old.setPosition(at.x, slotY(0)).setScale(1).setAlpha(full);
+        const place = (b, k) => { if (b) b.setPosition(at.x, slotY(k)).setScale(sideS).setAlpha(0); };
+        place(prev, -1);
+        place(next, 1);
+        place(after, 2);
+        this.farmInfoTransient = [old, prev, after].filter(Boolean);
+
+        // 1. THE WINDOW OPENS: the blocks either side of the finished farm
+        //    come up, dimmer and smaller than the one in the centre.
+        this.tweens.add({ targets: [prev, next].filter(Boolean), alpha: sideA, duration: inMs });
+
+        // 2. ONE BLOCK UP. The oldest leaves over the top; the next-but-one
+        //    rises in under the new centre.
+        this.time.delayedCall(inMs, () => {
+            if (turn !== this.farmInfoTurn) return;
+            const go = (b, k, sc, a, done) => {
+                if (!b || !b.scene) return;
+                this.tweens.add({ targets: b, y: slotY(k), scale: sc, alpha: a,
+                    duration: slide, ease, onComplete: done });
+            };
+            go(prev,  -2, sideS, 0, () => { if (prev && prev.scene) prev.destroy(); });
+            go(old,   -1, sideS, sideA);
+            go(next,   0, 1,     full);
+            go(after,  1, sideS, sideA, () => {
+                // 3. HOLD, THEN CLOSE back to the one block in the window.
+                if (turn !== this.farmInfoTurn) return;
+                const sides = [old, after].filter((b) => b && b.scene);
+                this.tweens.add({ targets: sides, alpha: 0, delay: hold, duration: outMs,
+                    onComplete: () => {
+                        for (const b of sides) if (b.scene) b.destroy();
+                        if (turn === this.farmInfoTurn) this.farmInfoTransient = [];
+                    } });
+            });
+        });
+    }
+
+    _farmInfoStyle(size, color) {
+        return {
+            fontSize: Math.max(10, Math.round(size * this.layoutConfig.scale)) + 'px',
+            fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT, color,
+        };
+    }
+
+    // ONE LEVEL'S BLOCK: name, "Crops harvested: n/m", area. A container whose
+    // (0,0) is the block's top-left, so it scales from its left edge and stays
+    // aligned with the blocks above and below it.
+    //
+    // THE HARVEST COUNTER is three pieces — the prefix, n, and "/m" — and n's
+    // column is sized for the widest n can ever be on this level, n
+    // right-aligned inside it, so "/m" is pinned and nothing on the line
+    // shifts as n counts up. See _farmHarvWidth.
+    _makeFarmInfoBlock(lvl) {
+        const F    = CONFIG.FARM_INFO || {};
+        const s    = this.layoutConfig.scale;
+        const name = this._cropForLevel(lvl);
+        if (!name) return null;
+        const nameStyle = this._farmInfoStyle(F.NAME_SIZE || 30, F.NAME_COLOR || '#2b2013');
+        const cs = this.farmHarvStyle = this._farmInfoStyle(F.AREA_SIZE || 24, F.AREA_COLOR || '#5b3a1c');
+        const gap = (F.LINE_GAP !== undefined ? F.LINE_GAP : 0) * s;
 
         const title = (F.NAMES || {})[name]
             || name.split(/[-_ ]+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
         // The level's own number, so the run reads as a count of farms — the
         // crop list wraps, and "Tomato Farm" alone would repeat every 16 levels.
-        this.farmNameText.setText((F.NAME_FORMAT || '{n}. {crop} Farm')
-            .replace('{n}', Math.floor(lvl)).replace('{crop}', title));
+        const nameT = this.add.text(0, 0, (F.NAME_FORMAT || '{n}. {crop} Farm')
+            .replace('{n}', Math.floor(lvl)).replace('{crop}', title), nameStyle);
 
         const total = cropValuesFor(lvl).reduce((a, b) => a + b, 0);
-        this.farmCountText.setText(F.COUNT_PREFIX !== undefined ? F.COUNT_PREFIX : 'Crops harvested: ');
-        this.farmHarvM.setText('/' + this._bigNum(total));
-        this.farmHarvTotal = total;
-        // n's COLUMN IS SIZED ONCE PER LEVEL, for the widest n can ever be, and
-        // n is right-aligned inside it — so "/m" is pinned and nothing on the
-        // line shifts as n counts up. See _farmHarvWidth.
-        this.farmHarvW = this._farmHarvWidth(total);
-        const perHa = (F.PER_HECTARE || {})[name] || F.DEFAULT_PER_HECTARE || 100000;
-        const ha = total / perHa;
-        const m2 = Math.round(ha * 10000);
-        const pre = F.AREA_PREFIX !== undefined ? F.AREA_PREFIX : 'Area: ';
-        this.farmAreaText.setText(pre + (m2 < 10000
-            ? `${this._bigNum(Math.max(1, m2))} m²`
-            : `${this._bigNum(Math.max(1, Math.round(ha)))} ha`));
+        const y1    = nameT.height + gap;
+        const pre   = this.add.text(0, y1,
+            F.COUNT_PREFIX !== undefined ? F.COUNT_PREFIX : 'Crops harvested: ', cs);
+        const xN    = pre.width + this._farmHarvWidth(total);
+        const nT    = this.add.text(xN, y1, '0', cs).setOrigin(1, 0);
+        const mT    = this.add.text(xN, y1, '/' + this._bigNum(total), cs);
 
-        const gap    = (F.LINE_GAP !== undefined ? F.LINE_GAP : 0) * s;
-        const blockH = this.farmNameText.height + gap + this.farmCountText.height
-                     + gap + this.farmAreaText.height;
-        const room   = Math.max(0, at.bottom - at.top - blockH);
-        const y      = at.top + room * (F.POS_FRAC !== undefined ? F.POS_FRAC : 0.3);
-        const yCount = y + this.farmNameText.height + gap;
-        this.farmNameText.setPosition(at.x, y);
-        this.farmCountText.setPosition(at.x, yCount);
-        const xN = at.x + this.farmCountText.width + this.farmHarvW;
-        this.farmHarvN.setPosition(xN, yCount);
-        this.farmHarvM.setPosition(xN, yCount);
-        this.farmAreaText.setPosition(at.x, yCount + this.farmCountText.height + gap);
-        this._setFarmHarvested(0);
+        const perHa = (F.PER_HECTARE || {})[name] || F.DEFAULT_PER_HECTARE || 100000;
+        const ha    = total / perHa;
+        const m2    = Math.round(ha * 10000);
+        const areaT = this.add.text(0, y1 + pre.height + gap,
+            (F.AREA_PREFIX !== undefined ? F.AREA_PREFIX : 'Area: ') + (m2 < 10000
+                ? `${this._bigNum(Math.max(1, m2))} m²`
+                : `${this._bigNum(Math.max(1, Math.round(ha)))} ha`), cs);
+
+        const box = this.add.container(0, 0, [nameT, pre, nT, mT, areaT])
+            .setDepth(F.DEPTH !== undefined ? F.DEPTH : 8);
+        box.level     = lvl;
+        box.harvN     = nT;
+        box.harvTotal = total;
+        box.blockH    = areaT.y + areaT.height;
+        return box;
     }
 
     // n, the crops harvested so far this level — the three plants' figures
     // less what each still holds. Called from harvestCrop on every pick.
     _setFarmHarvested(n) {
-        if (!this.farmHarvN || !this.farmHarvN.scene) return;
+        const b = this.farmInfo;
+        if (!b || !b.scene) return;
         if (n === undefined) {
             n = 0;
             for (const c of this.crops || []) n += Math.max(0, (c.total || 0) - (c.left || 0));
         }
-        this.farmHarvN.setText(this._bigNum(Math.min(n, this.farmHarvTotal || n)));
+        b.harvN.setText(this._bigNum(Math.min(n, b.harvTotal || n)));
     }
 
     // THE WIDEST n CAN BE on its way up to `total`, in the counter's own font.
@@ -1101,7 +1206,7 @@ class GameScene extends Phaser.Scene {
         if (!name || !this.textures.exists(`crop_${name}`)) return;
 
         const s = this.layoutConfig.scale;
-        this._updateFarmInfo(lvl, name);
+        this._updateFarmInfo(lvl, grown);
 
         // THE BOX, and where the plants stand in it — both decided in
         // createSlots, because a plant and the slot under it are laid out as
@@ -1287,6 +1392,7 @@ class GameScene extends Phaser.Scene {
 
         // Each bank's payout for this level, over it — shown again here since
         // a bank that burst last level took its label down with it.
+        this._sizePiggyBanks(this.crops.map((c) => this._piggyPayout(c)));
         this.crops.forEach((crop, i) => this._setPiggyLabel(i, this._piggyPayout(crop)));
     }
 
@@ -1776,6 +1882,32 @@ class GameScene extends Phaser.Scene {
             (crop.total || 0) * (PG.PAYOUT_MULT !== undefined ? PG.PAYOUT_MULT : 1)));
     }
 
+    // SMALL, MEDIUM, LARGE by RANK, never by ratio: the three payouts are only
+    // compared, so a bank worth ten times its neighbour is exactly one step
+    // bigger, the same as one worth a little more. Equal payouts share a size
+    // — three the same are all medium, two distinct values are small and
+    // large. Each bank stands on the row's floor and its label rides its top.
+    _sizePiggyBanks(payouts) {
+        const PG = (CONFIG.CROPS || {}).PIGGY || {};
+        const F  = PG.SIZE_STEPS || [0.84, 0.92, 1];
+        const row = this.pigRow;
+        if (!this.piggyBanks || !row) return;
+        const uniq = [...new Set(payouts)].sort((a, b) => a - b);
+        const step = (v) => uniq.length === 1 ? 1
+                          : uniq.length === 2 ? (v === uniq[0] ? 0 : 2)
+                          : Math.min(2, uniq.indexOf(v));
+        this.piggyBanks.forEach((pig, i) => {
+            if (!pig || !pig.scene || pig.baseScaleX === undefined) return;
+            const f = F[step(payouts[i])];
+            pig.restScaleX = pig.baseScaleX * f;
+            pig.restScaleY = pig.baseScaleY * f;
+            pig.setScale(pig.restScaleX, pig.restScaleY);
+            pig.y = row.bottom - pig.displayHeight / 2;
+            const lbl = this.piggyLabels && this.piggyLabels[i];
+            if (lbl && lbl.scene) lbl.y = pig.y - pig.displayHeight / 2 - row.lblGap - row.lblH / 2;
+        });
+    }
+
     // The figure over bank `i`, and the coin beside it, re-centred on the bank
     // as a pair so a longer number never pushes the coin off-centre.
     _setPiggyLabel(i, amount) {
@@ -2222,6 +2354,7 @@ class GameScene extends Phaser.Scene {
             // Only the bare key. Held with a modifier it belongs to the browser
             // or the operating system, and stealing it there would be rude.
             if (e.keyCode !== code || e.ctrlKey || e.metaKey || e.altKey) return;
+            if (this.isWatchingAd) return;   // the ad owns the pause while it runs
             this._setPaused(!this.gamePaused);
         });
     }
@@ -2402,9 +2535,14 @@ class GameScene extends Phaser.Scene {
         if (!p.batterySprite) return;
 
         const P = CONFIG.PLATFORM;
+        // A HOP AS WELL AS THE SQUEEZE: up a little and back down on the same
+        // yoyo, so the pig reads as putting its weight into each pick.
+        const lift = (P.BATTERY_PULSE_LIFT !== undefined ? P.BATTERY_PULSE_LIFT : 6)
+                   * this.layoutConfig.scale;
         this.tweens.add({
             targets: p.batterySprite,
-            scale: P.BATTERY_PULSE_SCALE,
+            // scale: P.BATTERY_PULSE_SCALE,   // off for now — hop only, on trial
+            y: p.batterySprite.y - lift,
             duration: P.BATTERY_PULSE_DURATION,
             yoyo: true,
             ease: 'Sine.easeInOut'
@@ -3360,6 +3498,10 @@ class GameScene extends Phaser.Scene {
 
     showMockAd(onComplete) {
         this.isWatchingAd = true;  // Block all interactions during ad
+        // THE WORLD STOPS FOR THE AD — harvest tick, tweens mid-flight, every
+        // timer — and picks up exactly where it was once the ad is over, the
+        // way Poki requires. The same freeze as the dev pause key.
+        this._setPaused(true);
         const W = this.cameras.main.width;
         const H = this.cameras.main.height;
         const A = CONFIG.AD;
@@ -3394,26 +3536,26 @@ class GameScene extends Phaser.Scene {
             fontStyle: CONFIG.FONT_WEIGHT,
         }).setOrigin(0.5, 1).setDepth(10001);
 
-        // Countdown from AD.DURATION to 0
+        // Countdown from AD.DURATION to 0. ON THE BROWSER'S CLOCK, not the
+        // scene's: the scene's is the one stopped for the ad, and a countdown
+        // on it would never reach zero.
         let timeLeft = A.DURATION;
-        const countdownEvent = this.time.addEvent({
-            delay: 1000,
-            repeat: A.DURATION,
-            callback: () => {
-                timeLeft--;
-                if (timeLeft > 0) {
-                    timerText.setText(`${timeLeft}`);
-                } else {
-                    // Ad complete - destroy immediately and upgrade
-                    countdownEvent.remove();  // Stop the countdown to prevent multiple calls
-                    overlay.destroy();
-                    rewardText.destroy();
-                    timerText.destroy();
-                    this.isWatchingAd = false;  // Re-enable interactions
-                    onComplete();  // Instant upgrade after ad
-                }
+        const countdown = window.setInterval(() => {
+            if (!overlay.scene) { window.clearInterval(countdown); return; }   // scene gone
+            timeLeft--;
+            if (timeLeft > 0) {
+                timerText.setText(`${timeLeft}`);
+            } else {
+                // Ad complete - destroy immediately and upgrade
+                window.clearInterval(countdown);
+                overlay.destroy();
+                rewardText.destroy();
+                timerText.destroy();
+                this.isWatchingAd = false;  // Re-enable interactions
+                this._setPaused(false);     // the world carries on from where it stopped
+                onComplete();  // Instant upgrade after ad
             }
-        });
+        }, 1000);
     }
 
     performLevelUpAll() {

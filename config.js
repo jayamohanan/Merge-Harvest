@@ -623,12 +623,18 @@ var CONFIG = {
             // under the rate label so the last slot never reads as flush
             // against the edge, but no longer free to drift up the half when
             // there is room to spare.
-            BOTTOM_PAD: 56,
+            BOTTOM_PAD: 56,            // LANDSCAPE only — portrait uses:
+            // PORTRAIT: the rate labels under the slots sit this far above the
+            // line between the two halves (px @ design), with the slots and
+            // plants stacked up from there. The banks stay at the top.
+            PORTRAIT_LINE_GAP: 6,
         },
 
         // Battery icons pulse once per charge tick.
         BATTERY_PULSE_SCALE: 0.6,      // scale the icon springs to
         BATTERY_PULSE_DURATION: 40,    // ms, one way — halved, to try a faster harvest
+        BATTERY_PULSE_LIFT: 20,         // px @ design scale it rises on the same
+                                       // beat, and comes back down on the yoyo
     },
 
     // ===================================================================
@@ -669,6 +675,19 @@ var CONFIG = {
         NAME_COLOR: '#6b4c2c',  // mid brown, not the near-black of the figures
         AREA_COLOR: '#7d5f3e',
         ALPHA:     0.85,
+        // THE REEL on a level turn — see _updateFarmInfo. The window opens to
+        // last level / this / next, slides up one block, holds, and closes.
+        REEL: {
+            ENABLED:    true,
+            SIDE_SCALE: 0.8,    // the blocks either side of the centre, smaller…
+            SIDE_ALPHA: 0.45,   // …and dimmer (× ALPHA)
+            PITCH_FRAC: 1,      // block-to-block distance, × one block's height
+            SHOW_MS:    220,    // the window opening
+            SLIDE_MS:   520,    // the one-block slide up
+            HOLD_MS:    700,    // all three held, before…
+            HIDE_MS:    260,    // …the window closes back to the one
+            EASE:       'Cubic.easeInOut',
+        },
         DEPTH:     1,          // under every crop layer (root produce is 2),
                                 // so flying produce passes OVER the text
         // Display names where title-casing the file name is not right.
@@ -1053,6 +1072,11 @@ var CONFIG = {
             // of them into each other. Spread and size have to be tuned as a
             // pair — if SIZE rises again, this has to come up with it.
             SPREAD: 0.5,
+            // SMALL, MEDIUM, LARGE — each bank's size as a fraction of SIZE,
+            // picked by how its payout RANKS against the other two, never by
+            // how much bigger it is. Close on purpose: enough to read, not a
+            // bank half the size of its neighbour.
+            SIZE_STEPS: [0.84, 0.92, 1],
             // THE PAYOUT OVER EACH BANK: what it pays in coins when it bursts
             // (the plant's figure × PAYOUT_MULT), with a coin beside it. Hidden
             // with the bank as it goes; back with the next level's banks.
