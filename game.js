@@ -3042,7 +3042,6 @@ class GameScene extends Phaser.Scene {
                     const iconY = y0 + len / 2 + iconGap + iconSize / 2;
                     icon = this.add.image(p.slotX, iconY, 'pig_hint')
                         .setDisplaySize(iconSize, iconSize)
-                        .setTint(hexColor(HI.TINT || '#9a9a9a'))
                         .setDepth(3.25)   // behind the arrow (3.3), and under the grid
                         .setAlpha(0);
                 }
@@ -3059,7 +3058,6 @@ class GameScene extends Phaser.Scene {
                     const iconX = x0 - len / 2 - iconGap - iconSize / 2;
                     icon = this.add.image(iconX, p.slotY, 'pig_hint')
                         .setDisplaySize(iconSize, iconSize)
-                        .setTint(hexColor(HI.TINT || '#9a9a9a'))
                         .setDepth(3.25)
                         .setAlpha(0);
                 }

@@ -48,7 +48,7 @@ function sharedAssets() {
     // The level-up-all button — text, icon and all baked into the one file,
     // so nothing is drawn over it (see createButtons).
     A.image('upgrade_button', 'graphics/ui/merge-grid/upgrade_button.png');
-    // The pig's own outline, tinted grey behind the slot hint's arrow (see
+    // The pig's own outline, as drawn, behind the slot hint's arrow (see
     // _showSlotHint / CONFIG.HINT_ICON) so the hint reads as "drag the pig
     // here" instead of a bare arrow.
     A.image('pig_hint', 'graphics/ui/merge-grid/piggy_icon.png');

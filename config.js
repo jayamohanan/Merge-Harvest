@@ -475,7 +475,7 @@ var CONFIG = {
     },
 
     // THE PIG, TO THE LEFT OF THE ARROW. graphics/ui/merge-grid/piggy_icon.png
-    // (see assets.js) — an outline-only pig, tinted grey and placed just
+    // (see assets.js) — an outline-only pig, drawn as-is (no tint) and placed just
     // behind where the arrow's
     // stroke begins, so together "pig, arrow, slot" reads as "drag this here"
     // rather than an arrow pointing at nothing in particular.
@@ -484,12 +484,6 @@ var CONFIG = {
         SIZE:      48,       // px @ design scale
         GAP:       4,        // clearance between the icon and the arrow's
                              // own tail, px @ design scale
-        // THE ART ITSELF IS NEARLY WHITE (~240,240,240) even fully opaque,
-        // and setTint() MULTIPLIES rather than replaces — so a mid-grey tint
-        // over that pale a source only darkens it to a soft ~145,145,145.
-        // Full ALPHA is what keeps it reading as a solid grey pig instead of
-        // that already-soft colour ALSO being see-through on top of it.
-        TINT:      '#9a9a9a',
         ALPHA:     1,
     },
 
