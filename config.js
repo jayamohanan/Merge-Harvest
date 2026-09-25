@@ -205,9 +205,9 @@ var CONFIG = {
         // frames rather than a second or two of the old layout on the new
         // screen. 1 waits at normal speed.
         RELAYOUT_FAST_FORWARD: 25,
-        // How long after the last resize event the new shape is read, ms — a
-        // turn fires more than one on the way round.
-        RELAYOUT_DEBOUNCE_MS: 60,
+        // How long a new shape has to hold before the game re-lays out for it,
+        // ms — a turn passes through in-between sizes on the way round.
+        RELAYOUT_DEBOUNCE_MS: 100,
     },
 
     // ── Level art, loaded as levels come near ─────────────────────────────────

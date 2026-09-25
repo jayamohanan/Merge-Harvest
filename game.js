@@ -477,27 +477,29 @@ class GameScene extends Phaser.Scene {
     // comes — a few frames. Nothing is skipped: every payout and level turn
     // still happens, only sooner, while the player is looking at a layout
     // that is about to be replaced anyway.
-    _watchOrientation() {
+    // WATCHED EVERY FRAME, not on resize events. A phone reports its new
+    // width and height some time after it says it has turned — later than any
+    // fixed wait can be relied on — so a check fired off the event could read
+    // the OLD shape, decide nothing had changed, and never be asked again.
+    // Reading the window each frame cannot miss it. The new shape has to hold
+    // for STAGE.RELAYOUT_DEBOUNCE_MS first, so a size passed through on the
+    // way round is not mistaken for the one it arrived at.
+    _pollOrientation() {
         const S = CONFIG.STAGE || {};
         if (S.FORCE === 'portrait' || S.FORCE === 'landscape') return;
-        let timer = null;
-        // AFTER THE BROWSER HAS SETTLED on its new size — a turn fires several
-        // resizes on the way round, and only the last one is the real shape.
-        const check = () => {
-            clearTimeout(timer);
-            timer = setTimeout(() => {
-                if (!this.sys || !this.sys.game) return;
-                // Turned back before the relayout ran? Then there is none to do.
-                this._relayoutPending = (window.innerHeight > window.innerWidth) !== this.isPortrait;
-            }, S.RELAYOUT_DEBOUNCE_MS !== undefined ? S.RELAYOUT_DEBOUNCE_MS : 60);
-        };
-        window.addEventListener('resize', check);
-        window.addEventListener('orientationchange', check);
-        this.events.once('shutdown', () => {
-            clearTimeout(timer);
-            window.removeEventListener('resize', check);
-            window.removeEventListener('orientationchange', check);
-        });
+        const w = window.innerWidth, h = window.innerHeight;
+        if (!w || !h) return;
+        const now = performance.now();
+        if ((h > w) === this.isPortrait) {
+            // Matches — including turned back before a relayout ran.
+            this._turnSeenAt = 0;
+            this._relayoutPending = false;
+            return;
+        }
+        if (!this._turnSeenAt) this._turnSeenAt = now;
+        if (now - this._turnSeenAt >= (S.RELAYOUT_DEBOUNCE_MS !== undefined ? S.RELAYOUT_DEBOUNCE_MS : 100)) {
+            this._relayoutPending = true;
+        }
     }
 
     // NOTHING IN FLIGHT that the game is waiting on. Looping tweens — the
@@ -614,8 +616,8 @@ class GameScene extends Phaser.Scene {
         if (hadMergeHint) this.createMergeTutorial();
         if (hadSlotHints) this._showSlotHint();
 
-        // Turned again while this ran — pick it up on the next frame.
-        if ((window.innerHeight > window.innerWidth) !== this.isPortrait) this._relayoutPending = true;
+        // Turned again while this ran? _pollOrientation picks it up next frame.
+        this._turnSeenAt = 0;
     }
 
     // A plant rebuilt on the new layout, given back what the old one had: how
@@ -811,7 +813,6 @@ class GameScene extends Phaser.Scene {
 
         this._buildPauseKey();
         this._buildSplitLine();
-        this._watchOrientation();
 
         // Everything the opening view needs is up.
         finishLoadingScreen();
@@ -4067,6 +4068,7 @@ class GameScene extends Phaser.Scene {
     update(time, delta) {
         if (!this._firstFrameMarked) { this._firstFrameMarked = true; loadMark('first frame — create() finished'); }
         if (this.gamePaused) return;
+        this._pollOrientation();
         if (this._relayoutPending) {
             if (this._isSettled()) { this._fastForward(false); this._relayout(); }
             // Not while a pig is held: that wait is the player's, and the

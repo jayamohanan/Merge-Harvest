@@ -35,6 +35,13 @@
 			width: 100%;
 			height: 100%;
 			overflow: hidden;
+			/* NO BROWSER GESTURES ON THE PAGE. Phaser stops them on the canvas,
+			   but not on the bars around it — and a swipe down there was the
+			   browser's pull-to-refresh, which reloads the page and loses the
+			   run. The bars are biggest mid-turn, when the old layout is still
+			   showing on the new screen, which is when it went off. */
+			overscroll-behavior: none;
+			touch-action: none;
 			/* Behind and around the canvas. Matched to the game's own ground so
 			   the letterboxing on odd aspect ratios, and the notches the panel's
 			   rounded corners leave, read as more of the same field rather than
