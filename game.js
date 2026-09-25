@@ -187,13 +187,17 @@ class GameScene extends Phaser.Scene {
         const H = this.scale.height;
         this.isPortrait = H > W;
 
-        const COLS = this.GRID_COLS, ROWS = this.GRID_ROWS, GAP = this.CELL_GAP;
+        // THE DESIGN FIGURES, FROM THE CONFIG — never this.CELL_SIZE / CELL_GAP,
+        // which hold the SCALED sizes once a layout has run (see
+        // _applyLayoutFields). Read from there, a relayout scaled an already
+        // scaled cell again, and the grid grew with every turn of the screen.
+        const COLS = this.GRID_COLS, ROWS = this.GRID_ROWS, GAP = CONFIG.CELL.GAP;
         const P    = CONFIG.PLATFORM;
         const isP  = this.isPortrait;
 
         // Design-space constants. None of these depend on the split, so they
         // come first: the design column is built out of them.
-        const BASE        = this.CELL_SIZE;                           // 130
+        const BASE        = CONFIG.CELL.SIZE;                         // 130
         const panPadRef   = CONFIG.CELL.GRID_PANEL_PADDING;          // 14
         const btnBotRef   = CONFIG.BUTTON.BOTTOM_PADDING;            // 70
         const btnGridRef  = CONFIG.MERGE_GRID.PADDING_FROM_BUTTON_TOP; // 50
