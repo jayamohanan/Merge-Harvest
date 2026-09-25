@@ -452,6 +452,228 @@ class GameScene extends Phaser.Scene {
     }
 
     // ================================================================
+    // RELAYOUT — the screen turned
+    // ================================================================
+    // THE GAME RE-LAYS ITSELF OUT IN PLACE when the screen turns between
+    // portrait and landscape. Nothing restarts: the run — coins, pigs, the
+    // level, how far each plant has been picked — is the same objects before
+    // and after. The stage takes the new shape, and everything is placed on it
+    // again.
+    //
+    // ONLY ON A TURN, not on every resize. Within one orientation the stage
+    // keeps its size and the browser simply scales it (see pickStage), so a
+    // desktop window being dragged about is still a non-event.
+    //
+    // AT REST, NEVER MID-ANIMATION. A bank bursting, fruit in the air, coins
+    // on their way to the counter all carry the game forward in their
+    // callbacks — the payout, the level turn — and are aimed at places on the
+    // old layout. So a turn only ASKS for a relayout: the harvest tick holds,
+    // whatever is in flight lands, and the relayout runs on the first frame
+    // where nothing is moving (see _isSettled).
+    //
+    // FAST-FORWARDED TO THAT POINT. Played out at normal speed the wait is a
+    // second or two of the old layout squeezed onto the turned screen, so
+    // tweens and timers run STAGE.RELAYOUT_FAST_FORWARD times faster until it
+    // comes — a few frames. Nothing is skipped: every payout and level turn
+    // still happens, only sooner, while the player is looking at a layout
+    // that is about to be replaced anyway.
+    _watchOrientation() {
+        const S = CONFIG.STAGE || {};
+        if (S.FORCE === 'portrait' || S.FORCE === 'landscape') return;
+        let timer = null;
+        // AFTER THE BROWSER HAS SETTLED on its new size — a turn fires several
+        // resizes on the way round, and only the last one is the real shape.
+        const check = () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                if (!this.sys || !this.sys.game) return;
+                // Turned back before the relayout ran? Then there is none to do.
+                this._relayoutPending = (window.innerHeight > window.innerWidth) !== this.isPortrait;
+            }, S.RELAYOUT_DEBOUNCE_MS !== undefined ? S.RELAYOUT_DEBOUNCE_MS : 60);
+        };
+        window.addEventListener('resize', check);
+        window.addEventListener('orientationchange', check);
+        this.events.once('shutdown', () => {
+            clearTimeout(timer);
+            window.removeEventListener('resize', check);
+            window.removeEventListener('orientationchange', check);
+        });
+    }
+
+    // NOTHING IN FLIGHT that the game is waiting on. Looping tweens — the
+    // tutorial pointers, the slot hints, the level-up button's pulse — never
+    // end, and are simply rebuilt on the new layout, so they do not count.
+    _isSettled() {
+        if (this.draggingBattery || this.isWatchingAd || this._levelTurning) return false;
+        if ((this._coinFlights || 0) > 0) return false;
+        if (this.farmInfoTransient && this.farmInfoTransient.length) return false;
+        for (const c of this.crops || []) if (!c.ready || c.regrow) return false;
+        return this.tweens.getTweens().every((t) => t.isInfinite);
+    }
+
+    // Time sped up while a relayout waits, and put back after. The charge tick
+    // is held meanwhile (see chargeCycle), so running its clock fast costs
+    // nothing; the level-up timer reads the real clock, not this one.
+    _fastForward(on) {
+        const S = CONFIG.STAGE || {};
+        const k = on ? Math.max(1, S.RELAYOUT_FAST_FORWARD !== undefined ? S.RELAYOUT_FAST_FORWARD : 25) : 1;
+        if (this.tweens.timeScale !== k) this.tweens.timeScale = k;
+        if (this.time.timeScale   !== k) this.time.timeScale   = k;
+    }
+
+    _relayout() {
+        this._relayoutPending = false;
+        const st = pickStage();
+        this.scale.setGameSize(st.width, st.height);
+        this.cameras.main.setSize(st.width, st.height);
+
+        // WHAT THE FURNITURE WAS SHOWING — the only state it holds, carried
+        // across. Everything else lives in records that are kept as they are.
+        const lvlUp = { visible: this.levelUpButtonVisible, showTime: this.levelUpButtonShowTime,
+                        alpha: this.levelUpButtonBg ? this.levelUpButtonBg.alpha : 1 };
+        const hadOverlay   = !!this.startOverlay;
+        const hadMergeHint = !!this.mergePointer;
+        const hadSlotHints = !!this.slotHints;
+        const kept = (this.crops || []).map((c) => ({ left: c.left, done: c.done, shakeDir: c.shakeDir }));
+
+        // ── The old layout's furniture comes down ────────────────────────────
+        const gone = (o) => { if (o && o.scene) { this.tweens.killTweensOf(o); o.destroy(); } };
+        gone(this.gridPanel);
+        for (const row of this.gridCells) for (const cd of row || []) { gone(cd.cell); gone(cd.filledBg); }
+        for (const p of this.platforms) { gone(p.slotBg); gone(p.slotBgFilled); gone(p.chargeRateText); }
+        for (const pig of this.piggyBanks || []) gone(pig);
+        for (const lbl of this.piggyLabels || []) gone(lbl);
+        for (const c of this.crops || []) { gone(c.plant); gone(c.fruit); gone(c.label); gone(c.shadow); }
+        this.crops = null;
+        for (const p of this.platforms) p.crop = null;
+        gone(this.farmInfo);
+        this.farmInfo = null;
+        gone(this.coinIcon);
+        gone(this.coinText);
+        gone(this.spawnButton);
+        gone(this.levelUpButton);
+        gone(this.splitLine);
+        if (this.leafEmitter) { this.leafEmitter.destroy(); this.leafEmitter = null; }
+        gone(this.startOverlay);
+        gone(this.startPointer);
+        this.startOverlay = this.startPointer = null;
+        gone(this.mergePointer);
+        this.mergePointer = null;
+        for (const lot of this.slotHints || []) for (const o of lot || []) gone(o);
+        this.slotHints = null;
+
+        // ── …and goes back up on the new one ────────────────────────────────
+        this.calculateLayout();
+        this._applyLayoutFields();
+        this._drawBackground();
+
+        // The farm half. The plants are regrown standing — no grow-in — and
+        // then given back how far they had been picked.
+        this.createSlots();
+        this.buildCrops(this.cropLevel, false);
+        (this.crops || []).forEach((c, i) => this._restoreCrop(c, kept[i]));
+        this._setFarmHarvested();
+
+        // The merge half.
+        this.createGrid();
+        for (let r = 0; r < this.GRID_ROWS; r++) {
+            for (let c = 0; c < this.GRID_COLS; c++) {
+                const cd = this.gridCells[r][c], on = !!this.grid[r][c];
+                cd.filledBg.setVisible(on);
+                cd.isEmpty = !on;
+            }
+        }
+        for (const bd of this.batteries) this._placeBattery(bd);
+        this.platforms.forEach((p, i) => {
+            const slot = this.chargingSlots[i];
+            p.slotBgFilled.setVisible(!!slot);
+            if (!slot) return;
+            p.chargeRateText.setText(this._bigNum(slot.chargePerMinute)).setVisible(true);
+            this._placeBattery(slot.batteryData);
+            p.batterySprite    = slot.batteryData.sprite;
+            p.batteryLevelText = slot.batteryData.levelText;
+        });
+
+        this.createCoinDisplay();
+        this.createButtons();
+        this.updateSpawnButton();
+        this.levelUpButtonShowTime = lvlUp.showTime;
+        this.levelUpButtonBg.setAlpha(lvlUp.alpha);
+        if (lvlUp.visible) {
+            this.levelUpButton.setVisible(true);
+            this.levelUpButtonVisible = true;
+            this.tweens.add({
+                targets: this.levelUpButton,
+                scaleX: 1.05, scaleY: 1.05, duration: 300,
+                yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+            });
+        }
+
+        this._buildSplitLine();
+        if (hadOverlay)   this.createStartOverlay();
+        if (hadMergeHint) this.createMergeTutorial();
+        if (hadSlotHints) this._showSlotHint();
+
+        // Turned again while this ran — pick it up on the next frame.
+        if ((window.innerHeight > window.innerWidth) !== this.isPortrait) this._relayoutPending = true;
+    }
+
+    // A plant rebuilt on the new layout, given back what the old one had: how
+    // much is left on it, or — spent — bare, greyed and settled, with its bank
+    // already burst. Straight to the end state, no animation: it happened.
+    _restoreCrop(crop, k) {
+        if (!k) return;
+        crop.left = k.left;
+        crop.shakeDir = k.shakeDir;
+        if (!k.done) {
+            if (crop.label && crop.label.scene) crop.label.setText(this._bigNum(crop.left));
+            return;
+        }
+        crop.done = true;
+        crop.left = 0;
+        if (crop.fruit) { crop.fruit.destroy(); crop.fruit = null; }
+        if (crop.label) { crop.label.destroy(); crop.label = null; }
+        const SP = (CONFIG.CROPS || {}).SPENT || {};
+        if (SP.ENABLED !== false && crop.plant) {
+            const frac = SP.SCALE_FRAC !== undefined ? SP.SCALE_FRAC : 0.85;
+            crop.plant.setTint(hexColor(SP.TINT !== undefined ? SP.TINT : '#8f8f8f'))
+                .setAlpha(SP.ALPHA !== undefined ? SP.ALPHA : 0.72)
+                .setScale(crop.plant.scaleX * frac, crop.plant.scaleY * frac);
+        }
+        const pig = this.piggyBanks && this.piggyBanks[crop.row];
+        if (pig) pig.setVisible(false);
+        const lbl = this.piggyLabels && this.piggyLabels[crop.row];
+        if (lbl) lbl.setVisible(false);
+    }
+
+    // A pig moved to where its cell or slot now is, at the new size. The same
+    // sprite, label and drag handle — only their geometry changes.
+    _placeBattery(bd) {
+        if (!bd || !bd.sprite) return;
+        const inSlot = bd.inChargingSlot;
+        const p   = inSlot ? this.platforms[bd.slotIndex] : null;
+        const cd  = inSlot ? null : this.gridCells[bd.row][bd.col];
+        const x   = inSlot ? p.slotX : cd.x;
+        const y   = inSlot ? p.slotY : cd.y;
+        const box = inSlot ? p.slotSize : this.CELL_SIZE;
+        const yOff = inSlot ? this.slotBatteryYOffset : this.batteryYOffset;
+        const tOff = inSlot ? this.slotLevelTextYOffset : this.levelTextYOffset;
+        for (const o of [bd.sprite, bd.levelText, bd.draggableBg]) if (o) this.tweens.killTweensOf(o);
+
+        bd.originalX = x;
+        bd.originalY = y + yOff;
+        bd.sprite.setPosition(x, bd.originalY).setDepth(11);
+        fitItemIcon(bd.sprite, inSlot ? this.slotBatteryW : this.batteryDisplayW,
+                               inSlot ? this.slotBatteryH : this.batteryDisplayH);
+        bd.levelText.setFontSize(inSlot ? this.slotLevelTextSize : this.levelTextSize)
+            .setScale(1).setPosition(x, bd.originalY + tOff).setDepth(12).setVisible(true);
+        if (bd.draggableBg) {
+            bd.draggableBg.setPosition(x, y).setSize(box, box).setDepth(10);
+            if (bd.draggableBg.input) bd.draggableBg.input.hitArea.setSize(box, box);
+        }
+    }
+
+    // ================================================================
     // PRELOAD
     // ================================================================
     preload() {
@@ -531,6 +753,7 @@ class GameScene extends Phaser.Scene {
 
         // Calculate layout based on orientation
         this.calculateLayout();
+        this._applyLayoutFields();
         const L = this.layoutConfig;
         // One-time responsive-layout sanity log
         const _cx   = L.partA.x + L.partA.width / 2;
@@ -542,48 +765,9 @@ class GameScene extends Phaser.Scene {
             `coin=(${_cx.toFixed(0)},${L.coinCenterY.toFixed(0)}) ` +
             `grid=(${_cx.toFixed(0)},${L.panelCenterY.toFixed(0)}) ` +
             `button=(${_cx.toFixed(0)},${L.buttonCenterY.toFixed(0)})`);
-        this.CELL_SIZE          = L.cellSize;
-        this.CELL_GAP           = L.cellGap;
-        this.batteryDisplayW    = L.batteryDisplayW;
-        this.batteryDisplayH    = L.batteryDisplayH;
-        this.slotBatteryW         = L.slotBatteryW;
-        this.slotBatteryH         = L.slotBatteryH;
-        this.slotBatteryYOffset   = L.slotBatteryYOffset;
-        this.slotLevelTextYOffset = L.slotLevelTextYOffset;
-        this.slotLevelTextSize    = L.slotLevelTextSize;
-        this.batteryYOffset     = L.batteryYOffset;
-        this.levelTextYOffset   = L.levelTextYOffset;
-        this.levelTextSize      = L.levelTextSize;
-        // Drawing geometry
-        this.CELL_RADIUS        = L.cellRadius;
-        this.cellInset          = L.cellInset;
-        this.platformScale      = L.platformScale;
-        // VFX
-        this.mergeEffectRadius  = L.mergeEffectRadius;
-        this.rewardCoinSize     = L.rewardCoinSize;
 
         // Background
-        const bgGfx = this.add.graphics();
-        const sc = parseInt(CONFIG.BACKGROUND.GRADIENT_START_COLOR.substring(1), 16);
-        const ec = parseInt(CONFIG.BACKGROUND.GRADIENT_END_COLOR.substring(1), 16);
-        // A TINT OVER THE GROUND, not the panel itself. At 0 nothing is drawn at
-        // all and the field's own colour is what the panel is made of.
-        const bgA = CONFIG.BACKGROUND.OPACITY !== undefined ? CONFIG.BACKGROUND.OPACITY : 1;
-        bgGfx.fillGradientStyle(sc, sc, ec, ec, bgA);
-        // THE UI HALF'S OWN CARD, rounded on all four of ITS corners — the two
-        // against the screen edge and the two against the farm.
-        //
-        // Drawn to partA rather than across the stage, because a full-screen
-        // fill would sit UNDER the rounded shape and show through its corners,
-        // which is the one thing rounding them is for. The farm half needs no
-        // fill: its camera covers that ground edge to edge.
-        const A = this.layoutConfig.partA;
-        const bgR = Math.round((CONFIG.BACKGROUND.CORNER_RADIUS || 0) * this.layoutConfig.scale);
-        if (bgA > 0) {
-            if (bgR > 0) bgGfx.fillRoundedRect(A.x, A.y, A.width, A.height, bgR);
-            else         bgGfx.fillRect(A.x, A.y, A.width, A.height);
-        }
-        bgGfx.setDepth(0);
+        this._drawBackground();
 
         // The farm half: the plants on show, and the slots standing beside them.
         // The sheets are cut BEFORE anything asks for a frame of one.
@@ -597,6 +781,9 @@ class GameScene extends Phaser.Scene {
         this.spawnBatteryInGrid(0, 0, CONFIG.BATTERY_START_LEVEL);
         this.assets.prefetchAhead(CONFIG.BATTERY_START_LEVEL + 1);
         this.createButtons();
+        this.time.addEvent({
+            delay: 1000, callback: this.checkLevelUpTimer, callbackScope: this, loop: true,
+        });
         this.createStartOverlay();
 
         // Input
@@ -624,9 +811,60 @@ class GameScene extends Phaser.Scene {
 
         this._buildPauseKey();
         this._buildSplitLine();
+        this._watchOrientation();
 
         // Everything the opening view needs is up.
         finishLoadingScreen();
+    }
+
+    // The layout's figures, copied onto the scene where the rest of the code
+    // reads them. Run after every calculateLayout — at build and on a relayout.
+    _applyLayoutFields() {
+        const L = this.layoutConfig;
+        this.CELL_SIZE          = L.cellSize;
+        this.CELL_GAP           = L.cellGap;
+        this.batteryDisplayW    = L.batteryDisplayW;
+        this.batteryDisplayH    = L.batteryDisplayH;
+        this.slotBatteryW         = L.slotBatteryW;
+        this.slotBatteryH         = L.slotBatteryH;
+        this.slotBatteryYOffset   = L.slotBatteryYOffset;
+        this.slotLevelTextYOffset = L.slotLevelTextYOffset;
+        this.slotLevelTextSize    = L.slotLevelTextSize;
+        this.batteryYOffset     = L.batteryYOffset;
+        this.levelTextYOffset   = L.levelTextYOffset;
+        this.levelTextSize      = L.levelTextSize;
+        // Drawing geometry
+        this.CELL_RADIUS        = L.cellRadius;
+        this.cellInset          = L.cellInset;
+        this.platformScale      = L.platformScale;
+        // VFX
+        this.mergeEffectRadius  = L.mergeEffectRadius;
+        this.rewardCoinSize     = L.rewardCoinSize;
+    }
+
+    // THE UI HALF'S CARD. Redrawn in place on a relayout — same object, cleared.
+    _drawBackground() {
+        const bgGfx = this.bgGfx = (this.bgGfx && this.bgGfx.scene) ? this.bgGfx.clear() : this.add.graphics();
+        const sc = parseInt(CONFIG.BACKGROUND.GRADIENT_START_COLOR.substring(1), 16);
+        const ec = parseInt(CONFIG.BACKGROUND.GRADIENT_END_COLOR.substring(1), 16);
+        // A TINT OVER THE GROUND, not the panel itself. At 0 nothing is drawn at
+        // all and the field's own colour is what the panel is made of.
+        const bgA = CONFIG.BACKGROUND.OPACITY !== undefined ? CONFIG.BACKGROUND.OPACITY : 1;
+        bgGfx.fillGradientStyle(sc, sc, ec, ec, bgA);
+        // THE UI HALF'S OWN CARD, rounded on all four of ITS corners — the two
+        // against the screen edge and the two against the farm.
+        //
+        // Drawn to partA rather than across the stage, because a full-screen
+        // fill would sit UNDER the rounded shape and show through its corners,
+        // which is the one thing rounding them is for. The farm half needs no
+        // fill: its camera covers that ground edge to edge.
+        const A = this.layoutConfig.partA;
+        const bgR = Math.round((CONFIG.BACKGROUND.CORNER_RADIUS || 0) * this.layoutConfig.scale);
+        if (bgA > 0) {
+            if (bgR > 0) bgGfx.fillRoundedRect(A.x, A.y, A.width, A.height, bgR);
+            else         bgGfx.fillRect(A.x, A.y, A.width, A.height);
+        }
+        bgGfx.setDepth(0);
     }
 
     // ================================================================
@@ -947,14 +1185,16 @@ class GameScene extends Phaser.Scene {
                 strokeThickness: Math.round((SR.STROKE_W !== undefined ? SR.STROKE_W : 3) * scale),
             }).setOrigin(0.5, 0).setDepth(5).setVisible(false);
 
-            this.platforms.push({
-                index: i,
-                slotX, slotY: slotYi, slotSize: ssz,
-                slotBg, slotBgFilled,
-                chargeRateText,
+            // ON A RELAYOUT the record is kept — it is what the charging slot,
+            // its battery and its plant are paired through — and only its
+            // geometry and furniture are swapped for the new ones.
+            const slot = { index: i, slotX, slotY: slotYi, slotSize: ssz,
+                           slotBg, slotBgFilled, chargeRateText };
+            if (this.platforms[i]) Object.assign(this.platforms[i], slot);
+            else this.platforms.push(Object.assign(slot, {
                 batterySprite: null, batteryLevelText: null,
                 crop: null,              // filled in by buildCrops
-            });
+            }));
         }
     }
 
@@ -2559,6 +2799,9 @@ class GameScene extends Phaser.Scene {
     }
 
     chargeCycle() {
+        // HELD WHILE A RELAYOUT WAITS, so the field can come to rest — see
+        // _requestRelayout. A second or so of harvest, never lost work.
+        if (this._relayoutPending) return;
         for (let i = 0; i < 3; i++) {
             const slot = this.chargingSlots[i];
             if (!slot) continue;
@@ -2652,7 +2895,7 @@ class GameScene extends Phaser.Scene {
         // margin and shadow around the nine cells, which cost vertical space the
         // half does not have to spare.
         const C     = CONFIG.CELL;
-        const panel = this.add.graphics().setDepth(3.4);   // over the farm slots (3), so the slot hint can pass UNDER the grid while still over its own slot
+        const panel = this.gridPanel = this.add.graphics().setDepth(3.4);   // over the farm slots (3), so the slot hint can pass UNDER the grid while still over its own slot
         const radius = Math.round(C.GRID_PANEL_RADIUS * L.scale);
         const border = Math.max(1, Math.round(C.GRID_PANEL_BORDER_WIDTH * L.scale));
         panel.fillStyle(hexColor(C.GRID_PANEL_COLOR), 1);
@@ -2845,9 +3088,6 @@ class GameScene extends Phaser.Scene {
         this.levelUpButtonVisible = false;
         this.levelUpButtonShowTime = null;
 
-        this.time.addEvent({
-            delay: 1000, callback: this.checkLevelUpTimer, callbackScope: this, loop: true,
-        });
     }
 
     createStartOverlay() {
@@ -3668,6 +3908,7 @@ class GameScene extends Phaser.Scene {
             return;
         }
         const tX  = this.coinIcon.x, tY = this.coinIcon.y;
+        this._coinFlights = (this._coinFlights || 0) + 1;   // see _isSettled
         const n   = Math.max(1, C.COIN_COUNT);
         let done  = 0;
 
@@ -3787,6 +4028,7 @@ class GameScene extends Phaser.Scene {
                             // rather than a number quietly changing.
                             this._punchCoinCounter(i === n - 1);
                             if (++done === n) {
+                                this._coinFlights--;
                                 this.coins += amount;
                                 this.updateCoinDisplay();
                                 // Mark coin animation complete for this platform
@@ -3825,6 +4067,14 @@ class GameScene extends Phaser.Scene {
     update(time, delta) {
         if (!this._firstFrameMarked) { this._firstFrameMarked = true; loadMark('first frame — create() finished'); }
         if (this.gamePaused) return;
+        if (this._relayoutPending) {
+            if (this._isSettled()) { this._fastForward(false); this._relayout(); }
+            // Not while a pig is held: that wait is the player's, and the
+            // field racing along under their finger would look broken.
+            else this._fastForward(!this.draggingBattery);
+        } else {
+            this._fastForward(false);   // turned back before it ran
+        }
         // Nothing to step. Everything that moves on screen is tween- or
         // timer-driven, and _setPaused stops those directly.
     }
@@ -3848,9 +4098,10 @@ const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 // inside the game ever learns the window changed, so there is nothing to
 // preserve and nothing to replay.
 //
-// Chosen from the window's SHAPE AT BOOT and then never revisited. That is the
-// deliberate part: a desktop window squeezed tall stays in landscape with bars
-// instead of reflowing into the phone layout.
+// Chosen from the window's SHAPE — at boot, and again when the screen turns
+// between portrait and landscape. A turn does not restart anything: the scene
+// takes the new size and re-lays itself out in place, run and all (see
+// _relayout). Any other resize is still just the browser scaling this stage.
 function pickStage() {
     const S = (typeof CONFIG !== 'undefined' && CONFIG.STAGE) || {};
     const P = S.PORTRAIT  || { W: 1080, H: 1920 };

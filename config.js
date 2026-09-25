@@ -199,6 +199,15 @@ var CONFIG = {
         // null decides from the window's shape at boot. 'portrait' / 'landscape'
         // pins it, which is how you test one layout on the other device.
         FORCE: null,
+        // ON A TURN between portrait and landscape the game re-lays itself out
+        // once whatever is mid-animation has landed (see _relayout in game.js).
+        // Until then time runs this many times faster, so that wait is a few
+        // frames rather than a second or two of the old layout on the new
+        // screen. 1 waits at normal speed.
+        RELAYOUT_FAST_FORWARD: 25,
+        // How long after the last resize event the new shape is read, ms — a
+        // turn fires more than one on the way round.
+        RELAYOUT_DEBOUNCE_MS: 60,
     },
 
     // ── Level art, loaded as levels come near ─────────────────────────────────
