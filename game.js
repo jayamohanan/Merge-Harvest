@@ -2515,12 +2515,20 @@ class GameScene extends Phaser.Scene {
         const fill   = filled ? hexColor(CONFIG.CELL.FILLED_BG_COLOR) : hexColor(CONFIG.CELL.EMPTY_BG_COLOR);
         const inset  = Math.max(1, Math.round(CONFIG.CELL.INSET_BORDER_WIDTH * size / CONFIG.PLATFORM.SLOT_SIZE));
         const r      = Math.round(CONFIG.PLATFORM.SLOT_RADIUS * size / CONFIG.PLATFORM.SLOT_SIZE);
+        // THE EMPTY FACE IS SEE-THROUGH (PLATFORM.SLOT_EMPTY_ALPHA), so an
+        // empty slot reads as a hole in the ground rather than a tile of some
+        // other colour. So the rim is a RING, stroked, not a full square under
+        // the face — a square there would show through the face instead of
+        // the ground.
+        const a = filled ? 1 : (CONFIG.PLATFORM.SLOT_EMPTY_ALPHA !== undefined
+                                ? CONFIG.PLATFORM.SLOT_EMPTY_ALPHA : 1);
         gfx.clear();
-        gfx.fillStyle(shadow, 1);
-        gfx.fillRoundedRect(x - size / 2, y - size / 2, size, size, r);
-        gfx.fillStyle(fill, 1);
+        gfx.fillStyle(fill, a);
         gfx.fillRoundedRect(x - size / 2 + inset, y - size / 2 + inset,
             size - inset * 2, size - inset * 2, Math.max(1, r - inset));
+        gfx.lineStyle(inset, shadow, 1);
+        gfx.strokeRoundedRect(x - size / 2 + inset / 2, y - size / 2 + inset / 2,
+            size - inset, size - inset, Math.max(1, r - inset / 2));
     }
 
     // THE RULE BETWEEN THE TWO HALVES.
@@ -2900,7 +2908,7 @@ class GameScene extends Phaser.Scene {
         // margin and shadow around the nine cells, which cost vertical space the
         // half does not have to spare.
         const C     = CONFIG.CELL;
-        const panel = this.gridPanel = this.add.graphics().setDepth(3.4);   // over the farm slots (3), so the slot hint can pass UNDER the grid while still over its own slot
+        const panel = this.gridPanel = this.add.graphics().setDepth(3.4);   // over the farm slots (3)
         const radius = Math.round(C.GRID_PANEL_RADIUS * L.scale);
         const border = Math.max(1, Math.round(C.GRID_PANEL_BORDER_WIDTH * L.scale));
         panel.fillStyle(hexColor(C.GRID_PANEL_COLOR), 1);
@@ -3291,7 +3299,12 @@ class GameScene extends Phaser.Scene {
                     len * (H.W_FRAC !== undefined ? H.W_FRAC : 1.35),
                     P.FILL_COLOR || '#ffd251', P.STROKE_COLOR || '#6d5727',
                     (P.STROKE_WIDTH || 3) * s)
-                .setDepth(3.3).setAlpha(0);   // over the slot (3), UNDER the grid (3.4)
+                // OVER EVERYTHING IT CAN CROSS: in portrait the last slot's
+                // arrow and pig run down over the grid panel, the coin counter
+                // (10) and any coins in flight (100+), and a lesson drawn
+                // behind those is half hidden. Still under a pig being
+                // dragged (10000+).
+                .setDepth(121).setAlpha(0);
             // IT CROSSES THE SLOT'S EDGE rather than hovering outside it. The
             // crossing is what reads as "in here" instead of "over there".
             const run = (H.TRAVEL !== undefined ? H.TRAVEL : 0.193) * size;
@@ -3316,7 +3329,7 @@ class GameScene extends Phaser.Scene {
                     const iconY = y0 + len / 2 + iconGap + iconSize / 2;
                     icon = this.add.image(p.slotX, iconY, 'pig_hint')
                         .setDisplaySize(iconSize, iconSize)
-                        .setDepth(3.25)   // behind the arrow (3.3), and under the grid
+                        .setDepth(120)    // just behind its arrow (121)
                         .setAlpha(0);
                 }
                 // RELATIVE, and UP is minus-Y — each starts at its own y, so
@@ -3332,7 +3345,7 @@ class GameScene extends Phaser.Scene {
                     const iconX = x0 - len / 2 - iconGap - iconSize / 2;
                     icon = this.add.image(iconX, p.slotY, 'pig_hint')
                         .setDisplaySize(iconSize, iconSize)
-                        .setDepth(3.25)
+                        .setDepth(120)
                         .setAlpha(0);
                 }
                 // RELATIVE, not an absolute end point — the arrow and the

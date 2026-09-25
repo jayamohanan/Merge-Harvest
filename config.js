@@ -488,7 +488,7 @@ var CONFIG = {
                              // Trimmed evenly at both ends — 15% of the run off
                              // each — so the stroke shrank about its own middle
                              // and the arrow did not drift up or down with it
-        MS:        380,      // one stroke, down and back
+        MS:        253,      // one stroke, down and back (was 380 — 50% faster)
         EASE:     'Sine.easeInOut',
         FADE_MS:   260,      // in when it appears, out when a slot is filled
     },
@@ -575,6 +575,11 @@ var CONFIG = {
         SLOT_SIZE: 130,                // reference slot square (px) — the ratio
                                        // every slot-derived size is measured in
         SLOT_RADIUS: 15,               // corner radius (px)
+        SLOT_EMPTY_ALPHA: 0,           // an EMPTY slot's face: 0 is no face at
+                                       // all — just the rim, with the brown
+                                       // ground inside it, so it reads as empty
+                                       // rather than as another colour. Filled,
+                                       // the slot takes its grained face as ever
         CHARGE_RATE_GAP: 2,            // gap (px) between a slot's bottom edge
                                        // and the charge-rate figure under it.
                                        // The font's own top padding adds to
@@ -948,7 +953,7 @@ var CONFIG = {
             // foot-anchored (setOrigin 0.5,1 in buildCrops), so it settles
             // straight down from its own crown while its feet stay on the
             // row's ground line.
-            SCALE_FRAC: 0.85,
+            SCALE_FRAC: 0.5,    // half its size once spent
             MS:      160,   // halved from 320, twice as fast — eased in rather
                             // than snapped: it lands on the same frame as the
                             // last fruit leaving, and two hard changes at once
