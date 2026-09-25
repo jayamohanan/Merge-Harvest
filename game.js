@@ -126,14 +126,14 @@ class GameScene extends Phaser.Scene {
     init() {
         this.platforms          = [];   // 3 battery slots (share this name so the
                                         // drag/drop code keeps working unchanged)
-        this.coins              = 1000;
+        this.coins              = CONFIG.ECONOMY.START_COINS;
         this.grid               = Array(3).fill(null).map(() => Array(3).fill(null));
         this.gridCells          = [];
         this.batteries          = [];
         this.draggingBattery    = null;
         this.hasStartedPlaying  = false;
         this.spawnButtonLevel   = CONFIG.BATTERY_START_LEVEL;
-        this.spawnCost          = 10;
+        this.spawnCost          = CONFIG.ECONOMY.SPAWN_COST_PER_LEVEL * CONFIG.BATTERY_START_LEVEL;
         this.highestBatteryLevel = CONFIG.BATTERY_START_LEVEL;
         this.levelUpTimer       = null;
         this.levelUpButtonVisible    = false;
@@ -1299,6 +1299,7 @@ class GameScene extends Phaser.Scene {
         // figure it takes — no plant carries its own copy, so the three cannot
         // come out in a different order than the table reads.
         const yields = cropValuesFor(lvl);
+        const payouts = coinPayoutsFor(lvl);   // null → each bank pays its plant's figure
 
         // EVERY BANK BACK AT REST. A plot whose last plant was stripped left
         // its bank hidden mid-burst (see _explodePiggy) — the plant now growing
@@ -1367,6 +1368,7 @@ class GameScene extends Phaser.Scene {
                     .setFlipX(flip),
                 fruit: null,                    // put there by _newFruit, below
                 total: yields[i], left: yields[i], done: false,
+                payout: payouts ? payouts[i] : undefined,
                 // Whether it can be harvested yet. False while a level turn is
                 // still growing it in — see below and chargeCycle.
                 ready: !grown,
@@ -1925,6 +1927,9 @@ class GameScene extends Phaser.Scene {
     // and the label over the bank read, so the two cannot disagree.
     _piggyPayout(crop) {
         const PG = (CONFIG.CROPS || {}).PIGGY || {};
+        // A LEVEL WITH ITS OWN PAYOUTS (COIN_PAYOUT_OVERRIDES in cropData.js)
+        // pays those as they are, not scaled by PAYOUT_MULT.
+        if (crop.payout !== undefined) return crop.payout;
         return Math.max(1, Math.round(
             (crop.total || 0) * (PG.PAYOUT_MULT !== undefined ? PG.PAYOUT_MULT : 1)));
     }
@@ -1950,8 +1955,15 @@ class GameScene extends Phaser.Scene {
             pig.restScaleY = pig.baseScaleY * f;
             pig.setScale(pig.restScaleX, pig.restScaleY);
             pig.y = row.bottom - pig.displayHeight / 2;
-            const lbl = this.piggyLabels && this.piggyLabels[i];
-            if (lbl && lbl.scene) lbl.y = pig.y - pig.displayHeight / 2 - row.lblGap - row.lblH / 2;
+        });
+        // THE FIGURES SHARE ONE LINE, whatever size each bank is: all of them
+        // sit off the TALLEST bank's top, so a smaller bank's figure does not
+        // drop down with it.
+        const live = this.piggyBanks.filter((p) => p && p.scene);
+        if (!live.length) return;
+        const top = row.bottom - Math.max(...live.map((p) => p.displayHeight));
+        (this.piggyLabels || []).forEach((lbl) => {
+            if (lbl && lbl.scene) lbl.y = top - row.lblGap - row.lblH / 2;
         });
     }
 
@@ -2374,7 +2386,9 @@ class GameScene extends Phaser.Scene {
             // so a big figure still visibly moves instead of sitting on the same
             // two digits for a minute.
             for (const [at, suffix] of [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']]) {
-                if (a >= at) return (a / at).toFixed(a < at * 10 ? 1 : 0) + suffix;
+                // Cut, not rounded, so 999,600 reads 999K rather than 1000K.
+                const d = a < at * 10 ? 1 : 0, k = Math.pow(10, d);
+                if (a >= at) return (Math.floor(a / at * k) / k).toFixed(d) + suffix;
             }
         }
         // Grouped, so six digits read at a glance: 50,000 not 50000.
@@ -3168,7 +3182,7 @@ class GameScene extends Phaser.Scene {
             const nl = this.highestBatteryLevel - 7;
             if (nl > this.spawnButtonLevel) {
                 this.spawnButtonLevel = nl;
-                this.spawnCost = nl * 10;
+                this.spawnCost = nl * CONFIG.ECONOMY.SPAWN_COST_PER_LEVEL;
                 this.spawnButtonText.setText(this._bigNum(this.spawnCost));
                 const iconLvl = getBatteryIconLevel(nl);
                 if (this.spawnButtonIcon) {
@@ -3810,24 +3824,6 @@ class GameScene extends Phaser.Scene {
     // ================================================================
     update(time, delta) {
         if (!this._firstFrameMarked) { this._firstFrameMarked = true; loadMark('first frame — create() finished'); }
-        // DEBUG: light boxes over the space each item's sprite and its level
-        // text take up, drawn under both (sprite 11, text 12).
-        if (!this.itemBoundsDbg || !this.itemBoundsDbg.scene) {
-            this.itemBoundsDbg = this.add.graphics().setDepth(10.5);
-        }
-        const g = this.itemBoundsDbg.clear();
-        const slotItems = (this.chargingSlots || []).filter(Boolean).map((s) => s.batteryData);
-        for (const bd of [...(this.batteries || []), ...slotItems]) {
-            if (!bd) continue;
-            if (bd.sprite && bd.sprite.scene && bd.sprite.visible) {
-                const r = bd.sprite.getBounds();
-                g.fillStyle(0xbfe3ff, 0.6).fillRect(r.x, r.y, r.width, r.height);
-            }
-            if (bd.levelText && bd.levelText.scene && bd.levelText.visible) {
-                const r = bd.levelText.getBounds();
-                g.fillStyle(0xfff3b0, 0.75).fillRect(r.x, r.y, r.width, r.height);
-            }
-        }
         if (this.gamePaused) return;
         // Nothing to step. Everything that moves on screen is tween- or
         // timer-driven, and _setPaused stops those directly.

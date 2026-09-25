@@ -80,13 +80,12 @@ var CONFIG = {
     // fit, a unit once they do not — the same rule everywhere, so two readouts
     // never write the same value differently.
     NUMBERS: {
-        ABBREV_FROM: 1e6,   // below this the whole number is shown, grouped:
-                            // 50,000 and 355,000 rather than 50K and 355K. Raise
-                            // it and more of the run reads exactly; lower it and
-                            // the readouts get narrower. The widest string it can
-                            // produce is 7 characters (999,999), which is what
-                            // the work figure over the machine has to hold
-        SEPARATOR:   ',',   // '' for none
+        ABBREV_FROM: 1e5,   // below this the whole number is shown: 50000, not
+                            // 50K. From here K takes over with up to three
+                            // digits (100K … 999K), then M, B, T. Raise it and
+                            // more of the run reads exactly; lower it and the
+                            // readouts get narrower.
+        SEPARATOR:   '',    // digit grouping, e.g. ',' for 50,000; '' for none
     },
 
     RESET_PROGRESS: false,
@@ -120,6 +119,12 @@ var CONFIG = {
     },
 
     BATTERY_START_LEVEL: 1,
+    // THE ECONOMY — on the same 2.5× scale as the crop and piggy tables (see
+    // THE ECONOMY'S RULES in cropData.js).
+    ECONOMY: {
+        START_COINS:          2500,
+        SPAWN_COST_PER_LEVEL: 25,    // a spawn costs this × the spawn level
+    },
     BATTERY_IMAGE_EXTENSIONS: ['webp'],
 
      BACKGROUND: {
