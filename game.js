@@ -1511,8 +1511,7 @@ class GameScene extends Phaser.Scene {
         const D = (CONFIG.CROPS || {}).DEPTH || {};
         const B = D.BAND || {};
         const inBand = { SHADOW: 0, ROOT_FRUIT: 0.02, PLANT: 0.05, FRUIT: 0.08 };
-        const max  = Math.max(1, D.ROW_MAX || 10);
-        const back = (max - 1) - Math.max(0, Math.min(max - 1, k || 0));   // front = max - 1
+        const back = 4 - Math.max(0, Math.min(4, k || 0));   // 4 = front of five
         return (D.ROW_BASE !== undefined ? D.ROW_BASE : 3.5)
              + back * (D.ROW_STEP !== undefined ? D.ROW_STEP : 0.1)
              + (B[layer] !== undefined ? B[layer] : inBand[layer]);
@@ -1523,11 +1522,9 @@ class GameScene extends Phaser.Scene {
     _plantsPerPlot(lvl) {
         const MP = (CONFIG.CROPS || {}).MULTI || {};
         if (MP.ENABLED === false) return 1;
-        const max = Math.max(1, ((CONFIG.CROPS || {}).DEPTH || {}).ROW_MAX || 10);
         let n = 1;
         for (const [from, count] of MP.COUNTS || []) if (lvl >= from) n = count;
-        if (MP.DEBUG_COUNT) n = MP.DEBUG_COUNT;   // preview — see CROPS.MULTI
-        return Math.max(1, Math.min(max, Math.floor(n)));
+        return Math.max(1, Math.min(5, Math.floor(n)));
     }
 
     // THE GROUND SHADOW under one plant, drawn before it and never touched by
