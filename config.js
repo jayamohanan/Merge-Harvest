@@ -118,7 +118,7 @@ var CONFIG = {
         BATCH:    4,        // icons per tick, so ~4.5 per second at the default
     },
 
-    BATTERY_START_LEVEL: 1,
+    BATTERY_START_LEVEL: 5,
     // THE ECONOMY — on the same 2.5× scale as the crop and piggy tables (see
     // THE ECONOMY'S RULES in cropData.js).
     ECONOMY: {
@@ -800,41 +800,53 @@ var CONFIG = {
         // The farm half's whole stack, in one place, because which of a plant
         // and its produce is nearer is the entire difference a root crop makes.
         //
-        //   ROOT_FRUIT  a potato or onion at rest: UNDER the foliage, and now
-        //               under the ground shadow too — the shadow is the last
-        //               thing painted over the soil before the plant, so a
-        //               tuber resting behind it reads as still buried rather
-        //               than sitting on top of the dirt.
+        // (SHADOW, ROOT_FRUIT, PLANT and FRUIT are per plant, inside that
+        // plant's band — see DEPTH below. The order among them is this one.)
+        //
         //   SHADOW      the flat oval cast on the ground beneath the plant.
         //               Drawn separately from the sprite so it never swings
         //               with a shake (see CROPS.SHADOW) — it only ever needs
-        //               to sit behind the plant and in front of a root crop's
-        //               buried produce.
-        //   LEAF        the harvest's leaves, BEHIND the plant that threw them.
+        //               to sit behind the plant.
+        //   ROOT_FRUIT  a potato or onion at rest: UNDER the foliage but OVER
+        //               the shadow. It used to go under the shadow too, to read
+        //               as buried — but the shadow is solid now (see
+        //               SHADOW.GROUND) and hid the produce outright. Still
+        //               behind its own plant's foliage.
+        //   LEAF        the harvest's leaves, BEHIND every plant.
         //               In front they crossed the plant's own face once a
         //               second and read as something thrown AT it; behind, the
         //               plant covers them as they fall and they read as coming
         //               off its back — which is where a picked plant actually
-        //               sheds. The half step is deliberate: it clears the slot
-        //               square below (drawn at 3), so leaves falling that far
-        //               are not swallowed by it.
+        //               sheds. It stays over the slot square below (drawn at
+        //               3), so leaves falling that far are not swallowed by it.
         //   PLANT       the leaves
         //   FRUIT       an ordinary crop's produce at rest: ON the plant
         //   PICKED      any produce while it is being lifted — in front of the
         //               shadow and the foliage either way, because it has left
         //               the plant. A root crop's tuber is pulled OUT here: this
         //               is the step where it stops being ROOT_FRUIT (behind the
-        //               shadow) and becomes this (in front of everything).
+        //               foliage) and becomes this (in front of everything).
         //   LABEL       the figure, over everything the plant does. Above
         //               PICKED on purpose: the count is the readout and a fruit
         //               crossing it once a second would take the one number the
         //               player is reading
         DEPTH: {
-            ROOT_FRUIT: 2,
-            SHADOW:     3.2,
-            LEAF:       3.5,
-            PLANT:      4,
-            FRUIT:      5,
+            // ONE BAND PER PLANT IN A ROW. A plot's plants stand one behind the
+            // other (see MULTI), and EVERYTHING of a nearer plant — its shadow,
+            // its produce — has to be over everything of the one behind it. So
+            // each plant gets its own band: the backmost of five at ROW_BASE,
+            // each nearer one ROW_STEP higher, the front plant's band the top.
+            // Inside a band the four layers stack by BAND's offsets, which
+            // stay under ROW_STEP so no layer reaches the next plant's band.
+            ROW_BASE:   3.5,
+            ROW_STEP:   0.1,
+            BAND: {
+                SHADOW:     0,
+                ROOT_FRUIT: 0.02,
+                PLANT:      0.05,
+                FRUIT:      0.08,
+            },
+            LEAF:       3.45,   // under every band, over the slots (3)
             PICKED:     6,
             LABEL:      8,
         },
@@ -857,6 +869,15 @@ var CONFIG = {
             ASPECT:     2.8,        // width ÷ height
             COLOR:      '#000000',
             ALPHA:      0.20,
+            // SOLID, PRE-MIXED WITH THE GROUND. A see-through shadow darkens the
+            // ground twice where two overlap — a plant's and the one behind it
+            // — and the overlap reads as a darker blot no real shadow makes. So
+            // each is drawn OPAQUE in the colour COLOR-at-ALPHA would give over
+            // GROUND: on its own it looks exactly the same, and overlapping
+            // ones are simply one colour. GROUND has to be the farm half's
+            // floor colour — the canvas background in game.js. null draws them
+            // see-through as before (for a ground that is not one flat colour).
+            GROUND:     '#d5ba95',
             // A crop's own WIDTH_FRAC, keyed by name, where the default reads
             // too wide or too narrow — usually because the plant does not fill
             // its frame the way the reference crop does. Empty until a crop is
@@ -933,6 +954,57 @@ var CONFIG = {
         // plant and a full one look identical from across the screen the moment
         // the fruit is off either of them.
         //
+        // ── A ROW OF PLANTS PER PLOT ─────────────────────────────────────────
+        // From level 3 a plot holds more than one plant: the front one being
+        // picked, the rest standing behind it on a diagonal — each a step to
+        // the right, a step up and a little smaller. The plot's figure is split
+        // between them in clean shares (the last takes whatever is left, so the
+        // plot's total stays exact) and they are worked FRONT TO BACK: when the
+        // front plant's share is gone it pops away and the one behind steps up.
+        //
+        // THE FIGURE UNDER THE PLOT IS THE PLANT BEING WORKED, not the row: it
+        // counts that one plant down to its pop, then starts on the next. A row
+        // total counting smoothly past each plant gave nothing to see when one
+        // ended and the next began. The DOTS under it keep the row's place.
+        //
+        // A tick worth more than what is left on the front plant carries on
+        // into the next, so a strong pig clears several in one go — shown as a
+        // quick chain of pops rather than lost. The LAST plant of a plot is not
+        // popped: it stays standing, spent (see SPENT below), as before.
+        MULTI: {
+            ENABLED: true,
+            // [from level, plants per plot] — levels 1 and 2 one each, then up
+            // to five (fifteen on the field).
+            COUNTS: [[1, 1], [3, 2], [6, 3], [10, 4], [15, 5]],
+            STEP_X:     0.16,   // each plant behind: this × a plant's width right…
+            STEP_Y:     0.07,   // …this × its height up…
+            SCALE_STEP: 0.05,   // …and this much smaller than the one in front
+            // The ones not yet being worked — 1 is fully solid, lower dims them
+            // until their turn comes.
+            WAITING_ALPHA: 1,
+            WAKE_MS:    180,    // a waiting plant coming up to full strength
+            POP_MS:     200,    // a finished plant going, swelling as it fades
+            POP_SCALE:  1.15,
+            CHAIN_MS:   90,     // between pops when one tick clears several
+            // ONE DOT PER PLANT under the figure: filled once that plant is
+            // done, hollow while it is still to come (●●○○ — two done, two
+            // left). Only on plots with more than one plant. The plot is laid
+            // out with room for them on every level, so the slots do not jump
+            // when the rows start.
+            DOTS: {
+                ENABLED:  true,
+                SIZE:     5,         // radius, px @ design scale
+                GAP:      5,         // between dots
+                TOP_GAP:  2,         // under the figure
+                COLOR:    '#2b2013', // the figure's own colour
+                STROKE_W: 1.5,       // a hollow dot's ring
+                // THE PLANT BEING WORKED: its ring with a small dot inside, this
+                // fraction of the ring's radius — ●◉○○ — so the row reads as
+                // done, now, still to come.
+                CURRENT_FRAC: 0.4,
+            },
+        },
+
         // TINT AND ALPHA TOGETHER. Alpha alone lets the ground through and reads
         // as the plant half-deleted; darkening it as well reads as a plant in
         // shade — still there, out of the light. Tint MULTIPLIES, so this can

@@ -549,7 +549,10 @@ class GameScene extends Phaser.Scene {
         for (const p of this.platforms) { gone(p.slotBg); gone(p.slotBgFilled); gone(p.chargeRateText); }
         for (const pig of this.piggyBanks || []) gone(pig);
         for (const lbl of this.piggyLabels || []) gone(lbl);
-        for (const c of this.crops || []) { gone(c.plant); gone(c.fruit); gone(c.label); gone(c.shadow); }
+        for (const c of this.crops || []) {
+            gone(c.plant); gone(c.fruit); gone(c.label); gone(c.shadow); gone(c.dots);
+            for (const p of c.plants || []) { gone(p.plant); gone(p.shadow); gone(p.fruit); }
+        }
         this.crops = null;
         for (const p of this.platforms) p.crop = null;
         gone(this.farmInfo);
@@ -631,8 +634,9 @@ class GameScene extends Phaser.Scene {
         if (!k) return;
         crop.left = k.left;
         crop.shakeDir = k.shakeDir;
+        this._advancePlants(crop, k.done, true);   // as far down the row as it was
         if (!k.done) {
-            if (crop.label && crop.label.scene) crop.label.setText(this._bigNum(crop.left));
+            if (crop.label && crop.label.scene) crop.label.setText(this._plotFigure(crop));
             return;
         }
         crop.done = true;
@@ -932,6 +936,7 @@ class GameScene extends Phaser.Scene {
         const colW = (this.layoutConfig.partB.width / 3) * spreadFrac
                    * (FS.COLUMN_FRAC !== undefined ? FS.COLUMN_FRAC : 0.86);
         if (h * aspect > colW) h = colW / aspect;
+        this.plotColW = colW;   // a ROW of plants is fitted to this too — see buildCrops
         return { w: h * aspect, h };
     }
 
@@ -973,7 +978,15 @@ class GameScene extends Phaser.Scene {
         // the rate label keeps off the slot's bottom edge. Taken from the
         // label's own size so it cannot drift out of step with it.
         const YL   = (CONFIG.CROPS || {}).YIELD_LABEL || {};
-        const head = (YL.SIZE || 24) * L.scale + s(P.CHARGE_RATE_GAP);
+        // …AND FOR THE ROW'S DOTS under it, whenever any level has a row, so
+        // the slots stand in the same place on every level — see CROPS.MULTI.
+        const MP   = (CONFIG.CROPS || {}).MULTI || {};
+        const DT   = MP.DOTS || {};
+        const rows = MP.ENABLED !== false && DT.ENABLED !== false
+                  && (MP.COUNTS || []).some(([, c]) => c > 1);
+        const dots = rows ? (2 * (DT.SIZE !== undefined ? DT.SIZE : 5)
+                             + (DT.TOP_GAP !== undefined ? DT.TOP_GAP : 2)) * L.scale : 0;
+        const head = (YL.SIZE || 24) * L.scale + s(P.CHARGE_RATE_GAP) + dots;
 
         // THE PIGGY BANKS ARE FURNITURE, NOT PART OF THE PLOT. They hang off
         // the TOP EDGE of the half on a small pad — a UI row that stays put,
@@ -1490,6 +1503,53 @@ class GameScene extends Phaser.Scene {
         }
     }
 
+    // THE DEPTH OF ONE LAYER OF THE k-th PLANT IN A ROW (0 = front). Each
+    // plant has its own band, nearer ones higher, so all of a front plant —
+    // shadow and produce included — draws over all of the one behind it. See
+    // CROPS.DEPTH.
+    _plantDepth(k, layer) {
+        const D = (CONFIG.CROPS || {}).DEPTH || {};
+        const B = D.BAND || {};
+        const inBand = { SHADOW: 0, ROOT_FRUIT: 0.02, PLANT: 0.05, FRUIT: 0.08 };
+        const back = 4 - Math.max(0, Math.min(4, k || 0));   // 4 = front of five
+        return (D.ROW_BASE !== undefined ? D.ROW_BASE : 3.5)
+             + back * (D.ROW_STEP !== undefined ? D.ROW_STEP : 0.1)
+             + (B[layer] !== undefined ? B[layer] : inBand[layer]);
+    }
+
+    // HOW MANY PLANTS A PLOT HOLDS on this level — CROPS.MULTI.COUNTS, the
+    // last step at or below the level. One if the row is switched off.
+    _plantsPerPlot(lvl) {
+        const MP = (CONFIG.CROPS || {}).MULTI || {};
+        if (MP.ENABLED === false) return 1;
+        let n = 1;
+        for (const [from, count] of MP.COUNTS || []) if (lvl >= from) n = count;
+        return Math.max(1, Math.min(5, Math.floor(n)));
+    }
+
+    // THE GROUND SHADOW under one plant, drawn before it and never touched by
+    // its shake — see CROPS.SHADOW. Sized off `w`, the plant's OWN drawn width,
+    // so it tracks whatever the plant is scaled to rather than the file's raw
+    // pixels. BOTTOM EDGE ON THE FOOT LINE, not centred on it: the whole oval
+    // sits under the plant with its lower rim on the ground line.
+    _plantShadow(name, x, baseY, w, depth) {
+        const SH = (CONFIG.CROPS || {}).SHADOW || {};
+        if (SH.ENABLED === false) return null;
+        const frac = (SH.OVERRIDES || {})[name] !== undefined
+            ? SH.OVERRIDES[name]
+            : (SH.WIDTH_FRAC !== undefined ? SH.WIDTH_FRAC : 0.7);
+        const shW = w * frac;
+        const shH = shW / (SH.ASPECT !== undefined ? SH.ASPECT : 2.8);
+        // Solid, in the colour the shadow makes on the ground, so overlapping
+        // ones do not darken each other — see CROPS.SHADOW.GROUND.
+        const col   = hexColor(SH.COLOR || '#000000');
+        const alpha = SH.ALPHA !== undefined ? SH.ALPHA : 0.20;
+        const flat  = SH.GROUND ? this._lerpColor(hexColor(SH.GROUND), col, alpha) : null;
+        return this.add.ellipse(x, baseY - shH / 2, shW, shH,
+                flat !== null ? flat : col, flat !== null ? 1 : alpha)
+            .setDepth(depth);
+    }
+
     buildCrops(level, grown) {
         const C = CONFIG.CROPS || {};
         if (C.ENABLED === false || !this.farmRows) return;
@@ -1537,8 +1597,7 @@ class GameScene extends Phaser.Scene {
         // The depth stack these three plots are drawn in — one place, because
         // which of the plant and its produce is in front is the whole of what a
         // root crop changes.
-        const D = Object.assign({ PLANT: 4, FRUIT: 5, ROOT_FRUIT: 2, SHADOW: 3.2, PICKED: 6, LABEL: 8 },
-                                C.DEPTH || {});
+        const D = Object.assign({ PICKED: 6, LABEL: 8 }, C.DEPTH || {});
 
         // WHAT EACH PLANT HOLDS, top to bottom. The plot's position IS which
         // figure it takes — no plant carries its own copy, so the three cannot
@@ -1580,37 +1639,50 @@ class GameScene extends Phaser.Scene {
             // It is a FLIP, not a second drawing — see CROPS.MIRROR_ROWS.
             const flip = (C.MIRROR_ROWS || [1]).indexOf(i) >= 0;
 
-            // THE GROUND SHADOW, drawn before the plant and never touched by
-            // its shake — see CROPS.SHADOW. Sized off w, the plant's OWN drawn
-            // width, so it tracks whatever this crop is scaled to here rather
-            // than the file's raw pixels.
-            const SH = C.SHADOW || {};
-            let shadow = null;
-            if (SH.ENABLED !== false) {
-                const frac = (SH.OVERRIDES || {})[name] !== undefined
-                    ? SH.OVERRIDES[name]
-                    : (SH.WIDTH_FRAC !== undefined ? SH.WIDTH_FRAC : 0.7);
-                const shW = w * frac;
-                const shH = shW / (SH.ASPECT !== undefined ? SH.ASPECT : 2.8);
-                // BOTTOM EDGE ON THE FOOT LINE, not centred on it — the art no
-                // longer carries its own baked shadow, so the plant sits at the
-                // height that used to put it mid-shadow. Half the ellipse's
-                // height above baseY puts the whole oval under the plant with
-                // its lower rim exactly on the ground line instead of straddling it.
-                shadow = this.add.ellipse(cx, baseY - shH / 2, shW, shH,
-                        hexColor(SH.COLOR || '#000000'), SH.ALPHA !== undefined ? SH.ALPHA : 0.20)
-                    .setDepth(D.SHADOW !== undefined ? D.SHADOW : 3.2);
+            // THE ROW. One plant on the first levels; from level 3 more, each
+            // a step right, up and smaller than the one in front — see
+            // CROPS.MULTI. The row is centred on the plot's line and fitted to
+            // its column, shrinking as a whole rather than reaching into the
+            // next plot. Plant 0 is the FRONT one, the one being picked; the
+            // rest wait behind it, dimmed.
+            const MP = C.MULTI || {};
+            const n  = this._plantsPerPlot(lvl);
+            const stepX = MP.STEP_X !== undefined ? MP.STEP_X : 0.16;
+            const stepY = MP.STEP_Y !== undefined ? MP.STEP_Y : 0.07;
+            const scStep = MP.SCALE_STEP !== undefined ? MP.SCALE_STEP : 0.05;
+            const fitK = n > 1 && this.plotColW
+                ? Math.min(1, this.plotColW / (w * (1 + (n - 1) * stepX))) : 1;
+            const shares = this._splitPlot(yields[i], n);
+            const plants = [];
+            let end = 0;
+            for (let k = 0; k < n; k++) {
+                const sk  = fitK * (1 - k * scStep);
+                const pw  = w * sk, ph = h * sk;
+                const px  = cx + (k - (n - 1) / 2) * stepX * w * fitK;
+                const pby = baseY - k * stepY * h * fitK;
+                // Behind the one in front: each a hair lower in the stack.
+                const plant = this.add.image(px, pby, `crop_${name}`, 0)
+                    .setDisplaySize(pw, ph).setOrigin(0.5, 1)
+                    .setDepth(this._plantDepth(k, 'PLANT')).setFlipX(flip)
+                    .setAlpha(k === 0 ? 1 : (MP.WAITING_ALPHA !== undefined ? MP.WAITING_ALPHA : 0.45));
+                const shadow = this._plantShadow(name, px, pby, pw, this._plantDepth(k, 'SHADOW'));
+                end += shares[k];
+                // `end` — the plot's figure picked by the time this one is
+                // done, which is what moves the row on (see _advancePlants).
+                plants.push({ plant, shadow, w: pw, h: ph, cx: px, baseY: pby,
+                              value: shares[k], end });
             }
+            const front = plants[0];
 
             const crop = {
-                name, level: lvl, row: i, w, h, cx, baseY, cy: baseY - h / 2,
-                shadow,
-                // THE PLANT STANDS ON THE FLOOR — foot origin, so a crop that
-                // does not fill the box's height is short at the top rather than
-                // floating clear of the line the others stand on.
-                plant: this.add.image(cx, baseY, `crop_${name}`, 0)
-                    .setDisplaySize(w, h).setOrigin(0.5, 1).setDepth(D.PLANT)
-                    .setFlipX(flip),
+                name, level: lvl, row: i,
+                // THE FRONT PLANT'S geometry — what the fruit, the pick and the
+                // shake all work on. Moved on to the next plant as each one is
+                // finished (see _advancePlants).
+                w: front.w, h: front.h, cx: front.cx, baseY: front.baseY,
+                cy: front.baseY - front.h / 2,
+                plant: front.plant, shadow: front.shadow,
+                plants, active: 0,
                 fruit: null,                    // put there by _newFruit, below
                 total: yields[i], left: yields[i], done: false,
                 payout: payouts ? payouts[i] : undefined,
@@ -1632,14 +1704,33 @@ class GameScene extends Phaser.Scene {
             // The first fruit is there from the start — no swell, nothing grew,
             // the plant simply has one.
             //
-            // ON A LEVEL TURN IT IS THREE BEATS, IN ORDER: the plant grows in
-            // bare, THEN its first fruit swells onto it, and only once that has
-            // landed does the harvest start. Fruit appearing on a plant still
-            // coming up, or picked before it has finished swelling, reads as the
-            // level starting before it has been put down.
+            // THE PLANTS BEHIND stand with their fruit on too — a row of plants
+            // ready to pick, not bare ones waiting to be dressed. Pinned at the
+            // plant's foot, like the front fruit while it grows in, and handed
+            // over as the plot's fruit when that plant's turn comes (see
+            // _advancePlants) — so it is there to pick at once, nothing pops on.
+            for (let k = 1; k < plants.length; k++) {
+                const p = plants[k];
+                p.fruit = this.add.image(p.cx, p.baseY, `crop_${name}`, 1)
+                    .setOrigin(0.5, 1).setDisplaySize(p.w, p.h).setFlipX(flip)
+                    .setDepth(this._plantDepth(k, crop.root ? 'ROOT_FRUIT' : 'FRUIT'))
+                    .setAlpha(p.plant.alpha);
+            }
+
+            // ON A LEVEL TURN IT GROWS IN WITH ITS FRUIT ON — one picture, the
+            // plant as it will be picked, rather than a bare plant and then a
+            // second beat of fruit swelling onto it. The fruit rides the grow
+            // pinned at the PLANT'S FOOT for the length of it, so the two scale
+            // about the same point and it stays exactly where it hangs; then it
+            // is put back on its own centre, which is where every later pop
+            // swells from (see _newFruit). The harvest waits for the grow.
             if (grown) {
-                this._growPlant(crop, () =>
-                    this._newFruit(crop, true, () => { crop.ready = true; }));
+                const fr = this._newFruit(crop, false);
+                if (fr) fr.setOrigin(0.5, 1).setPosition(crop.cx, crop.baseY);
+                this._growPlant(crop, () => {
+                    if (fr && fr.scene) fr.setOrigin(0.5, 0.5).setPosition(crop.cx, crop.cy);
+                    crop.ready = true;
+                }, fr);
             } else {
                 this._newFruit(crop, false);
             }
@@ -1652,7 +1743,7 @@ class GameScene extends Phaser.Scene {
             const Y = C.YIELD_LABEL || {};
             if (Y.ENABLED !== false) {
                 crop.label = this.add.text(cx, row.cy + boxH / 2 + CONFIG.PLATFORM.CHARGE_RATE_GAP * this.platformScale,
-                    this._bigNum(crop.left), {
+                    this._plotFigure(crop), {
                         fontSize: Math.max(10, Math.round((Y.SIZE || 24) * s)) + 'px',
                         fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
                         color: Y.COLOR || '#ffffff',
@@ -1665,6 +1756,21 @@ class GameScene extends Phaser.Scene {
                     this.tweens.add({ targets: crop.label, alpha: 1,
                         duration: N.GROW_MS !== undefined ? N.GROW_MS : 460 });
                 }
+            }
+
+            // THE ROW'S DOTS, under the figure — see CROPS.MULTI.DOTS.
+            const DT = (C.MULTI || {}).DOTS || {};
+            const dotR = (DT.SIZE !== undefined ? DT.SIZE : 5) * s;
+            const figBottom = crop.label
+                ? crop.label.y + crop.label.height
+                : row.cy + boxH / 2 + CONFIG.PLATFORM.CHARGE_RATE_GAP * this.platformScale;
+            crop.dotsAt = { x: cx, y: figBottom + (DT.TOP_GAP !== undefined ? DT.TOP_GAP : 2) * s + dotR };
+            this._drawPlantDots(crop);
+            if (grown && crop.dots) {
+                const N = C.NEXT_LEVEL || {};
+                crop.dots.setAlpha(0);
+                this.tweens.add({ targets: crop.dots, alpha: 1,
+                    duration: N.GROW_MS !== undefined ? N.GROW_MS : 460 });
             }
 
             if (C.LABEL) {
@@ -1711,13 +1817,18 @@ class GameScene extends Phaser.Scene {
         // pulse. It is a readout, and the thing that says the tick landed is the
         // fruit coming off the plant beside it; a label that jumps as well makes
         // two announcements of one event and neither is read.
-        if (crop.left > 0 && crop.label && crop.label.scene) {
-            crop.label.setText(this._bigNum(crop.left));
-        }
         this._setFarmHarvested();
 
         const last = crop.left <= 0;
         const picked = this._pickFruit(crop, last);
+        // AFTER the pick, so the fruit comes off — and the tug lands on — the
+        // plant that earned it; the next one steps up behind it.
+        this._advancePlants(crop, last);
+        // THE PLANT BEING WORKED, after the row has moved on — so a plant
+        // finished this tick shows the next one's share, never a nought.
+        if (crop.left > 0 && crop.label && crop.label.scene) {
+            crop.label.setText(this._plotFigure(crop));
+        }
         if (last) {
             this._spendCrop(crop);
             // NOTHING TO ANIMATE INTO THE BANK. The figure still owes its
@@ -1888,14 +1999,12 @@ class GameScene extends Phaser.Scene {
     _newFruit(crop, grown, onDone) {
         const C = CONFIG.CROPS || {}, H = C.PICK || {};
         if (crop.done || !crop.plant || !crop.plant.scene) return null;
-        const D = C.DEPTH || {};
         // BEHIND THE PLANT FOR A ROOT CROP. A potato or an onion grows UNDER
         // the ground and the leaves come up out of it, so the produce drawn over
         // the foliage would read as sitting on top of the plant rather than as
         // the thing the plant is growing from. Behind it, the foliage overlaps
         // the tuber and the two read as one plant rooted in the soil.
-        const rest = crop.root ? (D.ROOT_FRUIT !== undefined ? D.ROOT_FRUIT : 2)
-                               : (D.FRUIT      !== undefined ? D.FRUIT      : 5);
+        const rest = this._plantDepth(crop.active || 0, crop.root ? 'ROOT_FRUIT' : 'FRUIT');
         // TURNED THE SAME WAY THE PLANT IS. Both frames are drawn over exactly
         // the same rectangle, so the flip that mirrors the plant has to mirror
         // its fruit too — otherwise a mirrored plant grows its produce on the
@@ -2046,7 +2155,7 @@ class GameScene extends Phaser.Scene {
                 alpha: { start: 1, end: 0, ease: 'Quad.easeIn' },
                 tint: (L.COLORS || [0x6ab04c, 0x4e9a3e, 0x8bc34a, 0x3f7d33]),
                 emitting: false,
-            }).setDepth(D.LEAF !== undefined ? D.LEAF : 3.5);
+            }).setDepth(D.LEAF !== undefined ? D.LEAF : 3.45);
         }
         this.leafEmitter.emitParticleAt(x, y, L.COUNT !== undefined ? L.COUNT : 9);
     }
@@ -2055,21 +2164,182 @@ class GameScene extends Phaser.Scene {
     // pinned by its foot, so scaling it up is growth out of the ground and
     // needs nothing else. `onDone` fires once it stands at full size — that is
     // when buildCrops swells its first fruit onto it.
-    _growPlant(crop, onDone) {
+    _growPlant(crop, onDone, withFruit) {
         const N = (CONFIG.CROPS || {}).NEXT_LEVEL || {};
         const from = N.FROM !== undefined ? N.FROM : 0.2;
         const ms   = N.GROW_MS !== undefined ? N.GROW_MS : 460;
-        const o = crop.plant;
-        if (!o || !o.scene) { if (onDone) onDone(); return; }
-        const sx = o.scaleX, sy = o.scaleY;
-        o.setScale(sx * from, sy * from);
-        this.tweens.add({ targets: o, scaleX: sx, scaleY: sy,
-            duration: ms, ease: N.GROW_EASE || 'Back.easeOut',
-            onComplete: () => {
-                if (!o.scene) return;
-                o.setScale(sx, sy);
-                if (onDone) onDone();
-            } });
+        // THE WHOLE ROW comes up together; `onDone` rides on the front plant,
+        // the one the first fruit goes onto.
+        // Each plant's own fruit grows with it; list[0] stays the front plant.
+        const list = (crop.plants || [{ plant: crop.plant }])
+            .flatMap((p) => [p.plant, p.fruit]).filter(Boolean);
+        if (!list[0] || !list[0].scene) { if (onDone) onDone(); return; }
+        // The front plant's first fruit, growing in on it — see buildCrops.
+        if (withFruit) list.push(withFruit);
+        list.forEach((o, k) => {
+            if (!o || !o.scene) return;
+            const sx = o.scaleX, sy = o.scaleY;
+            o.setScale(sx * from, sy * from);
+            this.tweens.add({ targets: o, scaleX: sx, scaleY: sy,
+                duration: ms, ease: N.GROW_EASE || 'Back.easeOut',
+                onComplete: () => {
+                    if (!o.scene) return;
+                    o.setScale(sx, sy);
+                    if (k === 0 && onDone) onDone();
+                } });
+        });
+    }
+
+    // ── Down the row ─────────────────────────────────────────────────────────
+    // Each plant in a plot's row holds a share of the plot's figure (see
+    // _splitPlot). Once what has been picked covers the front plant's share,
+    // it POPS AWAY — a
+    // swell, a fade and a burst of leaves — and the plant behind it comes up to
+    // full strength and becomes the one being picked. A tick worth more than
+    // one plant takes several, popped in a quick chain; nothing it paid for is
+    // lost. The LAST plant is never popped: it stays standing, spent (see
+    // _spendCrop). `instant` skips the animation — a relayout putting the row
+    // back as it was.
+    _advancePlants(crop, last, instant) {
+        const P = crop.plants;
+        if (!P || P.length < 2) return;
+        const n = P.length;
+        const picked = Math.max(0, (crop.total || 0) - (crop.left || 0));
+        let done = 0;
+        while (done < n - 1 && picked >= P[done].end) done++;
+        const to = last ? n - 1 : done;
+        const from = crop.active || 0;
+        if (to <= from) return;
+
+        const MP = (CONFIG.CROPS || {}).MULTI || {};
+        const popMs = MP.POP_MS !== undefined ? MP.POP_MS : 200;
+        const chain = MP.CHAIN_MS !== undefined ? MP.CHAIN_MS : 90;
+        const popK  = MP.POP_SCALE !== undefined ? MP.POP_SCALE : 1.15;
+        if (crop.shake) { crop.shake.remove(); crop.shake = null; }
+
+        for (let k = from; k < to; k++) {
+            const p = P[k];
+            for (const o of [p.plant, p.shadow, p.fruit]) {
+                if (!o || !o.scene) continue;
+                this.tweens.killTweensOf(o);
+                if (instant) { o.destroy(); continue; }
+                this.tweens.add({
+                    targets: o, alpha: 0,
+                    scaleX: o.scaleX * popK, scaleY: o.scaleY * popK,
+                    delay: (k - from) * chain, duration: popMs, ease: 'Quad.easeOut',
+                    onComplete: () => o.destroy(),
+                });
+            }
+            if (!instant) {
+                const at = (k - from) * chain;
+                this.time.delayedCall(at, () => this._leafBurst(p.cx, p.baseY - p.h / 2, p.h));
+            }
+            p.plant = p.shadow = p.fruit = null;
+        }
+
+        // THE NEXT ONE STEPS UP. Its geometry becomes the plot's, so the fruit,
+        // the pick and the tug all go to it from here on.
+        const q = P[to];
+        crop.active = to;
+        crop.plant = q.plant; crop.shadow = q.shadow;
+        crop.w = q.w; crop.h = q.h; crop.cx = q.cx; crop.baseY = q.baseY;
+        crop.cy = q.baseY - q.h / 2;
+        if (q.plant && q.plant.scene) {
+            this.tweens.killTweensOf(q.plant);
+            // Straight to full when it is the last and about to be spent, so
+            // the greying starts from the plant as it really looks.
+            if (instant || last) q.plant.setAlpha(1);
+            else this.tweens.add({ targets: q.plant, alpha: 1,
+                delay: (to - from - 1) * chain,
+                duration: MP.WAKE_MS !== undefined ? MP.WAKE_MS : 180 });
+        }
+        // A fruit still hanging on a plant that has gone goes with it.
+        if (crop.fruit) {
+            if (crop.fruit.scene) crop.fruit.destroy();
+            crop.fruit = null;
+        }
+        // THE NEW FRONT PLANT'S OWN FRUIT becomes the one being picked — it
+        // has stood on it all along. A regrow the last pick set going would
+        // give it a second, so that is called off. The LAST plant reached in a
+        // pick that also spent it has nothing left to give: its fruit goes.
+        if (q.fruit && q.fruit.scene) {
+            this.tweens.killTweensOf(q.fruit);
+            if (last) {
+                q.fruit.destroy();
+            } else {
+                if (crop.regrow) { crop.regrow.remove(false); crop.regrow = null; }
+                crop.fruit = q.fruit.setOrigin(0.5, 0.5).setPosition(crop.cx, crop.cy).setAlpha(1);
+            }
+        } else if (!last && !crop.regrow) {
+            this._newFruit(crop, !instant);
+        }
+        q.fruit = null;
+        this._drawPlantDots(crop);
+    }
+
+    // A PLOT'S FIGURE SPLIT ACROSS ITS ROW, in clean shares — 250 over two is
+    // 125 and 125, not 125.0 and 124.9. Each share is rounded to a step of
+    // 5 in its second digit (or 1, for small figures), and the LAST plant takes
+    // whatever is left, so the shares always add up to the plot exactly.
+    _splitPlot(total, n) {
+        if (!(n > 1)) return [total];
+        const each = total / n;
+        const e    = Math.floor(Math.log10(Math.max(1, each)));
+        const step = Math.max(1, 5 * Math.pow(10, e - 2));
+        const v    = Math.max(1, Math.round(each / step) * step);
+        const rest = total - v * (n - 1);
+        if (rest < 1) {
+            // Too small a figure to split cleanly — plain whole shares.
+            const f = Math.max(1, Math.floor(total / n));
+            return [...Array(n - 1).fill(f), Math.max(1, total - f * (n - 1))];
+        }
+        return [...Array(n - 1).fill(v), rest];
+    }
+
+    // WHAT THE FIGURE UNDER A PLOT SAYS: what is left on the plant being
+    // worked. For a plot of one plant that is simply what is left on the plot.
+    _plotFigure(crop) {
+        const P = crop.plants;
+        if (!P || P.length < 2) return this._bigNum(crop.left);
+        const picked = Math.max(0, (crop.total || 0) - (crop.left || 0));
+        const cur = P[Math.min(P.length - 1, crop.active || 0)];
+        return this._bigNum(Math.max(0, cur.end - picked));
+    }
+
+    // THE ROW'S PLACE, as dots under the figure: filled for the plants done,
+    // a ring with a small dot in it for the one being worked, hollow for the
+    // ones still to come (●◉○○). Redrawn whenever the row moves on.
+    // Nothing on a plot of one plant.
+    _drawPlantDots(crop) {
+        const DT = ((CONFIG.CROPS || {}).MULTI || {}).DOTS || {};
+        const n  = (crop.plants || []).length;
+        if (DT.ENABLED === false || n < 2 || !crop.dotsAt) return;
+        const s   = this.layoutConfig.scale;
+        const r   = (DT.SIZE !== undefined ? DT.SIZE : 5) * s;
+        const gap = (DT.GAP  !== undefined ? DT.GAP  : 5) * s;
+        const sw  = Math.max(1, (DT.STROKE_W !== undefined ? DT.STROKE_W : 1.5) * s);
+        const col = hexColor(DT.COLOR || '#2b2013');
+        const D   = (CONFIG.CROPS || {}).DEPTH || {};
+        if (!crop.dots || !crop.dots.scene) {
+            crop.dots = this.add.graphics().setDepth(D.LABEL !== undefined ? D.LABEL : 8);
+        }
+        const g = crop.dots.clear();
+        const done = crop.done ? n : (crop.active || 0);
+        const y = crop.dotsAt.y;
+        let x = crop.dotsAt.x - (n * 2 * r + (n - 1) * gap) / 2 + r;
+        for (let k = 0; k < n; k++, x += 2 * r + gap) {
+            if (k < done) {
+                g.fillStyle(col, 1);
+                g.fillCircle(x, y, r);
+            } else {
+                g.lineStyle(sw, col, 1);
+                g.strokeCircle(x, y, r - sw / 2);
+                if (k === done) {
+                    g.fillStyle(col, 1);
+                    g.fillCircle(x, y, r * (DT.CURRENT_FRAC !== undefined ? DT.CURRENT_FRAC : 0.4));
+                }
+            }
+        }
     }
 
     // The plant's figure has reached zero. IT KEEPS STANDING — bare — because a
@@ -2086,6 +2356,7 @@ class GameScene extends Phaser.Scene {
         if (crop.done) return;
         crop.done = true;
         crop.left = 0;
+        this._drawPlantDots(crop);   // the last one filled — the row is done
         // Nothing grows back on it. A regrow already in flight would put fruit
         // on a plant that has none left to give.
         if (crop.regrow) { crop.regrow.remove(false); crop.regrow = null; }
@@ -2408,7 +2679,8 @@ class GameScene extends Phaser.Scene {
         let any = false;
         for (const cr of list) {
             if (cr.regrow) { cr.regrow.remove(false); cr.regrow = null; }
-            for (const o of [cr.plant, cr.fruit, cr.label, cr.shadow]) {
+            const row = (cr.plants || []).flatMap((p) => [p.plant, p.shadow, p.fruit]);
+            for (const o of new Set([cr.plant, cr.fruit, cr.label, cr.shadow, cr.dots, ...row])) {
                 if (!o || !o.scene) continue;
                 any = true;
                 this.tweens.killTweensOf(o);
@@ -2418,7 +2690,8 @@ class GameScene extends Phaser.Scene {
                     duration: ms, ease: N.CLEAR_EASE || 'Back.easeIn',
                     onComplete: () => o.destroy() });
             }
-            cr.plant = cr.fruit = cr.label = cr.shadow = null;
+            cr.plant = cr.fruit = cr.label = cr.shadow = cr.dots = null;
+            cr.plants = null;
         }
         this.time.delayedCall(any ? ms : 0, done);
     }
