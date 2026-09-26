@@ -551,7 +551,7 @@ class GameScene extends Phaser.Scene {
         for (const lbl of this.piggyLabels || []) gone(lbl);
         for (const c of this.crops || []) {
             gone(c.plant); gone(c.fruit); gone(c.label); gone(c.shadow); gone(c.dots);
-            for (const p of c.plants || []) { gone(p.plant); gone(p.shadow); gone(p.fruit); }
+            for (const p of c.plants || []) { gone(p.plant); gone(p.shadow); gone(p.fruit); gone(p.stump); }
         }
         this.crops = null;
         for (const p of this.platforms) p.crop = null;
@@ -643,8 +643,11 @@ class GameScene extends Phaser.Scene {
         crop.left = 0;
         if (crop.fruit) { crop.fruit.destroy(); crop.fruit = null; }
         if (crop.label) { crop.label.destroy(); crop.label = null; }
+        const cur = crop.plants && crop.plants[crop.active || 0];
         const SP = (CONFIG.CROPS || {}).SPENT || {};
-        if (SP.ENABLED !== false && crop.plant) {
+        if (cur && this._stumpOn()) {
+            this._toStump(crop, cur, 0);
+        } else if (SP.ENABLED !== false && crop.plant) {
             const frac = SP.SCALE_FRAC !== undefined ? SP.SCALE_FRAC : 0.85;
             crop.plant.setTint(hexColor(SP.TINT !== undefined ? SP.TINT : '#8f8f8f'))
                 .setAlpha(SP.ALPHA !== undefined ? SP.ALPHA : 0.72)
@@ -1533,8 +1536,9 @@ class GameScene extends Phaser.Scene {
     // THE GROUND SHADOW under one plant, drawn before it and never touched by
     // its shake — see CROPS.SHADOW. Sized off `w`, the plant's OWN drawn width,
     // so it tracks whatever the plant is scaled to rather than the file's raw
-    // pixels. BOTTOM EDGE ON THE FOOT LINE, not centred on it: the whole oval
-    // sits under the plant with its lower rim on the ground line.
+    // pixels. CENTRED ON THE FOOT LINE — the bottom of the sprite, where the
+    // art stands its plant (and stump) on the frame's bottom edge — so the
+    // oval spreads either side of the foot, the way a shadow sits on ground.
     _plantShadow(name, x, baseY, w, depth) {
         const SH = (CONFIG.CROPS || {}).SHADOW || {};
         if (SH.ENABLED === false) return null;
@@ -1548,7 +1552,9 @@ class GameScene extends Phaser.Scene {
         const col   = hexColor(SH.COLOR || '#000000');
         const alpha = SH.ALPHA !== undefined ? SH.ALPHA : 0.20;
         const flat  = SH.GROUND ? this._lerpColor(hexColor(SH.GROUND), col, alpha) : null;
-        return this.add.ellipse(x, baseY - shH / 2, shW, shH,
+        // Raised by RAISE × its own height, off the exact foot line.
+        const up = shH * (SH.RAISE !== undefined ? SH.RAISE : 0.1);
+        return this.add.ellipse(x, baseY - up, shW, shH,
                 flat !== null ? flat : col, flat !== null ? 1 : alpha)
             .setDepth(depth);
     }
@@ -1653,27 +1659,63 @@ class GameScene extends Phaser.Scene {
             const stepX = MP.STEP_X !== undefined ? MP.STEP_X : 0.16;
             const stepY = MP.STEP_Y !== undefined ? MP.STEP_Y : 0.07;
             const scStep = MP.SCALE_STEP !== undefined ? MP.SCALE_STEP : 0.05;
+            // THE DIAGONAL, CAPPED: STEP_X per plant, but never more than
+            // SPAN_MAX plant-widths end to end — a long row packs its plants
+            // closer rather than being shrunk to fit a longer diagonal.
+            const shift = Math.min((n - 1) * stepX,
+                                   MP.SPAN_MAX !== undefined ? MP.SPAN_MAX : 0.8);
+            const dx0 = n > 1 ? shift / (n - 1) : 0;
+            const dy  = stepX > 0 ? stepY * dx0 / stepX : stepY;
+            // PERSPECTIVE ACROSS THE PLOTS. Drawn flat, three rows stepping
+            // right by the same amount do not read as parallel, so each plot
+            // left to right steps a little less (MULTI.PLOT_STEP_X). Only the
+            // sideways step: the rise and the plants' size are the same in all
+            // three, so the rows still match.
+            const plotK = ((MP.PLOT_STEP_X || [])[i] !== undefined) ? MP.PLOT_STEP_X[i] : 1;
+            const dx = dx0 * plotK;
+            // THE ROW'S REAL WIDTH, front plant's left edge to the back one's
+            // right — the back ones are smaller, and counting them at full
+            // size shrank the row more than it needed. FIT_SLACK lets the
+            // frames run a little past the column, since a plant's frame has
+            // empty margin either side of the plant itself.
+            const spanW = w * (shift + 0.5 + (1 - (n - 1) * scStep) / 2);
             const fitK = n > 1 && this.plotColW
-                ? Math.min(1, this.plotColW / (w * (1 + (n - 1) * stepX))) : 1;
+                ? Math.min(1, this.plotColW * (MP.FIT_SLACK !== undefined ? MP.FIT_SLACK : 1.1) / spanW)
+                : 1;
+            // Centred on that real extent, not on the plants' middles — with
+            // this plot's own step, which is narrower than the one it was
+            // sized by.
+            const realW = w * (shift * plotK + 0.5 + (1 - (n - 1) * scStep) / 2);
+            const left = cx - realW * fitK / 2;
             const shares = this._splitPlot(yields[i], n);
             const plants = [];
             let end = 0;
             for (let k = 0; k < n; k++) {
+                // EVERY OTHER PLANT MIRRORED (MULTI.ALTERNATE_FLIP), so a row
+                // of the same picture reads as a row of plants, not one copied.
+                const pflip = (MP.ALTERNATE_FLIP !== false && k % 2 === 1) ? !flip : flip;
                 const sk  = fitK * (1 - k * scStep);
-                const pw  = w * sk, ph = h * sk;
-                const px  = cx + (k - (n - 1) / 2) * stepX * w * fitK;
-                const pby = baseY - k * stepY * h * fitK;
+                // A LITTLE TALLER OR SHORTER, each plant its own — a row of
+                // identical heights reads as stamped out. From a hash of the
+                // plot, the place in the row and the level, not Math.random(),
+                // so the same field comes back the same after a relayout.
+                const jit = (this._cellHash(i, k, lvl) * 2 - 1)
+                          * (MP.HEIGHT_JITTER !== undefined ? MP.HEIGHT_JITTER : 0.08);
+                const pw  = w * sk, ph = h * sk * (1 + jit);
+                const px  = n > 1 ? left + w * fitK / 2 + k * dx * w * fitK : cx;
+                const pby = baseY - k * dy * h * fitK;
                 // Behind the one in front: each a hair lower in the stack.
                 const plant = this.add.image(px, pby, `crop_${name}`, 0)
                     .setDisplaySize(pw, ph).setOrigin(0.5, 1)
-                    .setDepth(this._plantDepth(k, 'PLANT')).setFlipX(flip)
+                    .setDepth(this._plantDepth(k, 'PLANT')).setFlipX(pflip)
                     .setAlpha(k === 0 ? 1 : (MP.WAITING_ALPHA !== undefined ? MP.WAITING_ALPHA : 0.45));
                 const shadow = this._plantShadow(name, px, pby, pw, this._plantDepth(k, 'SHADOW'));
                 end += shares[k];
                 // `end` — the plot's figure picked by the time this one is
                 // done, which is what moves the row on (see _advancePlants).
                 plants.push({ plant, shadow, w: pw, h: ph, cx: px, baseY: pby,
-                              value: shares[k], end });
+                              value: shares[k], end,
+                              pf: pw / f0.width, k, name, flip: pflip });   // pf: art px → screen
             }
             const front = plants[0];
 
@@ -1715,7 +1757,7 @@ class GameScene extends Phaser.Scene {
             for (let k = 1; k < plants.length; k++) {
                 const p = plants[k];
                 p.fruit = this.add.image(p.cx, p.baseY, `crop_${name}`, 1)
-                    .setOrigin(0.5, 1).setDisplaySize(p.w, p.h).setFlipX(flip)
+                    .setOrigin(0.5, 1).setDisplaySize(p.w, p.h).setFlipX(p.flip)
                     .setDepth(this._plantDepth(k, crop.root ? 'ROOT_FRUIT' : 'FRUIT'))
                     .setAlpha(p.plant.alpha);
             }
@@ -1810,7 +1852,10 @@ class GameScene extends Phaser.Scene {
     // player nothing.
     harvestCrop(crop, power) {
         if (!crop || crop.done || !(power > 0)) return;
+        const took = Math.min(power, crop.left);
         crop.left = Math.max(0, crop.left - power);
+        // What it took, drifting off the figure — before the figure can go.
+        this._showYieldDelta(crop, took);
         // THE FIGURE IS NEVER WRITTEN AS A NOUGHT. It counts fruit still to
         // come, so zero is not a value it can hold — it is the moment the label
         // stops existing (see _spendCrop), and writing it first would put a 0 on
@@ -1823,7 +1868,15 @@ class GameScene extends Phaser.Scene {
         this._setFarmHarvested();
 
         const last = crop.left <= 0;
-        const picked = this._pickFruit(crop, last);
+        // EVERY PLANT THIS TICK CLEARS GIVES UP ITS FRUIT, not just the one
+        // being worked: a strong pig sweeping three plants sends three to the
+        // bank, one after another down the row. Taken off those plants now,
+        // before the row moves on and clears them away.
+        const chain = this._chainFruits(crop, last);
+        // The bank bursts on the LAST fruit of the tick to land — the end of
+        // the chain if there is one, the picked fruit if not.
+        const picked = this._pickFruit(crop, last && !chain.length);
+        this._flyChain(crop, chain, last);
         // AFTER the pick, so the fruit comes off — and the tug lands on — the
         // plant that earned it; the next one steps up behind it.
         this._advancePlants(crop, last);
@@ -1838,8 +1891,73 @@ class GameScene extends Phaser.Scene {
             // payout — see _spendCrop/_explodePiggy — but there is no fruit to
             // wait on, so it is cashed out at once rather than blocked on a
             // flight that was never going to happen.
-            if (!picked) this._explodePiggy(crop, () => this._cropFullyBanked(crop));
+            if (!picked && !chain.length) this._explodePiggy(crop, () => this._cropFullyBanked(crop));
         }
+    }
+
+    // "-10" BESIDE THE FIGURE: starts off its right edge, drifts right and
+    // fades. Placed off the figure as it stands BEFORE this tick rewrites it,
+    // and on the tick that spends the plot, the figure is about to go — the
+    // delta still leaves from where it was. See CROPS.YIELD_LABEL.DELTA.
+    _showYieldDelta(crop, amount) {
+        const Y  = (CONFIG.CROPS || {}).YIELD_LABEL || {};
+        const DL = Y.DELTA || {};
+        const lb = crop.label;
+        if (DL.ENABLED === false || !lb || !lb.scene || !(amount > 0)) return;
+        const s  = this.layoutConfig.scale;
+        const fs = Math.max(8, Math.round((Y.SIZE || 24) * (DL.SIZE_FRAC !== undefined ? DL.SIZE_FRAC : 0.75) * s));
+        const D  = (CONFIG.CROPS || {}).DEPTH || {};
+        const x  = lb.x + lb.width / 2 + (DL.GAP !== undefined ? DL.GAP : 4) * s;
+        const y  = lb.y + lb.height / 2;
+        const t = this.add.text(x, y, '-' + this._bigNum(amount), {
+            fontSize: fs + 'px', fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
+            color: DL.COLOR || '#8a3b1c',
+        }).setOrigin(0, 0.5).setDepth(D.LABEL !== undefined ? D.LABEL : 8);
+        this.tweens.add({
+            targets: t,
+            x: x + (DL.DRIFT !== undefined ? DL.DRIFT : 42) * s,
+            alpha: 0,
+            duration: DL.MS !== undefined ? DL.MS : 650,
+            ease: DL.EASE || 'Quad.easeOut',
+            onComplete: () => t.destroy(),
+        });
+    }
+
+    // THE PLANTS A TICK IS ABOUT TO CLEAR BEYOND THE ONE BEING WORKED — and,
+    // on the tick that spends the plot, the last plant too — as the fruit each
+    // one is standing with, detached from it so the row clearing away does
+    // not take them. In row order.
+    _chainFruits(crop, last) {
+        const P = crop.plants;
+        if (!P || P.length < 2) return [];
+        const from = crop.active || 0;
+        const to   = this._rowTarget(crop, last);
+        const out  = [];
+        // Plants from+1 .. to-1 are cleared outright; the last one, reached by
+        // the tick that spends the plot, has nothing left to give either.
+        const end = last ? to : to - 1;
+        for (let k = from + 1; k <= end; k++) {
+            const p = P[k];
+            if (p.fruit && p.fruit.scene) out.push({ p, fr: p.fruit });
+            p.fruit = null;
+        }
+        return out;
+    }
+
+    // Each of them lifted off where it stood and sent to the bank, a CHAIN_MS
+    // apart — the same beat the row pops on. The last carries the burst when
+    // this tick spends the plot.
+    _flyChain(crop, chain, last) {
+        const MP = (CONFIG.CROPS || {}).MULTI || {};
+        const gap = MP.CHAIN_MS !== undefined ? MP.CHAIN_MS : 90;
+        const D = (CONFIG.CROPS || {}).DEPTH || {};
+        chain.forEach(({ p, fr }, i) => {
+            this.tweens.killTweensOf(fr);
+            // Off the foot pin it stood on, onto its own centre, like any fruit.
+            fr.setOrigin(0.5, 0.5).setPosition(p.cx, p.baseY - p.h / 2).setAlpha(1)
+              .setDepth(D.PICKED !== undefined ? D.PICKED : 6);
+            this._liftFruit(fr, crop, p.h, last && i === chain.length - 1, (i + 1) * gap);
+        });
     }
 
     // The plant's fruit comes OFF it — the real sprite, lifting straight up at
@@ -1880,16 +1998,10 @@ class GameScene extends Phaser.Scene {
         const D = (CONFIG.CROPS || {}).DEPTH || {};
         fr.setDepth(D.PICKED !== undefined ? D.PICKED : 6);
 
-        this.tweens.add({
-            targets: fr,
-            y: fr.y - crop.h * (H.RISE !== undefined ? H.RISE : 1),
-            duration: H.MS !== undefined ? H.MS : 420,
-            ease: H.EASE || 'Sine.easeOut',
-            // `last` rides along to the bank: the explosion must not begin
-            // until THIS fruit — the one that stripped the plant — has
-            // actually landed in it. See _bankFruit.
-            onComplete: () => this._bankFruit(fr, crop, last),
-        });
+        // `last` rides along to the bank: the explosion must not begin until
+        // THIS fruit — the one that stripped the plant — has actually landed in
+        // it. See _bankFruit.
+        this._liftFruit(fr, crop, crop.h, last, 0);
 
         // AND THE PLANT IS SHAKEN BY IT. Leaves come away where the fruit was
         // and fall past the plant — the pick's own debris, which is what says
@@ -1910,6 +2022,20 @@ class GameScene extends Phaser.Scene {
         crop.regrow = this.time.delayedCall(H.REGROW_MS !== undefined ? H.REGROW_MS : 140,
             () => { crop.regrow = null; this._newFruit(crop, true); });
         return true;
+    }
+
+    // THE LIFT: a fruit off its plant, straight up by RISE × `h`, then on to
+    // the bank (_bankFruit). `delay` holds it for its place in a chain.
+    _liftFruit(fr, crop, h, last, delay) {
+        const H = (CONFIG.CROPS || {}).PICK || {};
+        this.tweens.add({
+            targets: fr,
+            y: fr.y - h * (H.RISE !== undefined ? H.RISE : 1),
+            delay: delay || 0,
+            duration: H.MS !== undefined ? H.MS : 420,
+            ease: H.EASE || 'Sine.easeOut',
+            onComplete: () => this._bankFruit(fr, crop, last),
+        });
     }
 
     // ── Step two: into the bank ──────────────────────────────────────────────
@@ -2206,11 +2332,7 @@ class GameScene extends Phaser.Scene {
     _advancePlants(crop, last, instant) {
         const P = crop.plants;
         if (!P || P.length < 2) return;
-        const n = P.length;
-        const picked = Math.max(0, (crop.total || 0) - (crop.left || 0));
-        let done = 0;
-        while (done < n - 1 && picked >= P[done].end) done++;
-        const to = last ? n - 1 : done;
+        const to = this._rowTarget(crop, last);
         const from = crop.active || 0;
         if (to <= from) return;
 
@@ -2222,6 +2344,13 @@ class GameScene extends Phaser.Scene {
 
         for (let k = from; k < to; k++) {
             const p = P[k];
+            const at = instant ? 0 : (k - from) * chain;
+            if (!instant) this.time.delayedCall(at, () => this._leafBurst(p.cx, p.baseY - p.h / 2, p.h));
+            if (this._stumpOn()) {
+                this._toStump(crop, p, at);
+                continue;
+            }
+            // No stump art: the old pop — a swell and a fade.
             for (const o of [p.plant, p.shadow, p.fruit]) {
                 if (!o || !o.scene) continue;
                 this.tweens.killTweensOf(o);
@@ -2229,13 +2358,9 @@ class GameScene extends Phaser.Scene {
                 this.tweens.add({
                     targets: o, alpha: 0,
                     scaleX: o.scaleX * popK, scaleY: o.scaleY * popK,
-                    delay: (k - from) * chain, duration: popMs, ease: 'Quad.easeOut',
+                    delay: at, duration: popMs, ease: 'Quad.easeOut',
                     onComplete: () => o.destroy(),
                 });
-            }
-            if (!instant) {
-                const at = (k - from) * chain;
-                this.time.delayedCall(at, () => this._leafBurst(p.cx, p.baseY - p.h / 2, p.h));
             }
             p.plant = p.shadow = p.fruit = null;
         }
@@ -2246,6 +2371,7 @@ class GameScene extends Phaser.Scene {
         crop.active = to;
         crop.plant = q.plant; crop.shadow = q.shadow;
         crop.w = q.w; crop.h = q.h; crop.cx = q.cx; crop.baseY = q.baseY;
+        crop.flip = q.flip;
         crop.cy = q.baseY - q.h / 2;
         if (q.plant && q.plant.scene) {
             this.tweens.killTweensOf(q.plant);
@@ -2280,6 +2406,54 @@ class GameScene extends Phaser.Scene {
         this._drawPlantDots(crop);
     }
 
+    // WHICH PLANT OF THE ROW IS BEING WORKED once what has been picked is
+    // counted: the first whose share is not yet covered — or the last, on the
+    // tick that spends the plot.
+    _rowTarget(crop, last) {
+        const P = crop.plants || [];
+        const n = P.length;
+        if (n < 2) return 0;
+        if (last) return n - 1;
+        const picked = Math.max(0, (crop.total || 0) - (crop.left || 0));
+        let done = 0;
+        while (done < n - 1 && picked >= P[done].end) done++;
+        return done;
+    }
+
+    // Whether harvested plants leave a stump — switched on and the art in hand.
+    _stumpOn() {
+        const ST = (CONFIG.CROPS || {}).STUMP || {};
+        return ST.ENABLED !== false && this.textures.exists('crop_stump');
+    }
+
+    // A HARVESTED PLANT BECOMES A STUMP: the plant (and any fruit still on it)
+    // simply goes, and the stump stands on its foot at the plant's own scale,
+    // in the plant's own depth band, over a much smaller shadow. `delay` holds
+    // it for its place in a chain of pops. A chain outlived by its plot — the
+    // level turned over, or the field was re-laid-out — does nothing.
+    _toStump(crop, p, delay) {
+        const swap = () => {
+            if (!this.crops || this.crops[crop.row] !== crop) return;
+            for (const o of [p.plant, p.fruit, p.shadow]) {
+                if (!o || !o.scene) continue;
+                this.tweens.killTweensOf(o);
+                o.destroy();
+            }
+            if (crop.plant === p.plant) crop.plant = null;
+            p.plant = p.fruit = null;
+            const ST  = (CONFIG.CROPS || {}).STUMP || {};
+            const src = this.textures.get('crop_stump').get();
+            p.shadow = this._plantShadow(p.name, p.cx, p.baseY,
+                p.w * (ST.SHADOW_FRAC !== undefined ? ST.SHADOW_FRAC : 0.3),
+                this._plantDepth(p.k, 'SHADOW'));
+            p.stump = this.add.image(p.cx, p.baseY, 'crop_stump').setOrigin(0.5, 1)
+                .setDisplaySize(src.width * p.pf, src.height * p.pf).setFlipX(!!p.flip)
+                .setDepth(this._plantDepth(p.k, 'PLANT'));
+        };
+        if (delay > 0) this.time.delayedCall(delay, swap);
+        else swap();
+    }
+
     // A PLOT'S FIGURE SPLIT ACROSS ITS ROW, in clean shares — 250 over two is
     // 125 and 125, not 125.0 and 124.9. Each share is rounded to a step of
     // 5 in its second digit (or 1, for small figures), and the LAST plant takes
@@ -2299,11 +2473,12 @@ class GameScene extends Phaser.Scene {
         return [...Array(n - 1).fill(v), rest];
     }
 
-    // WHAT THE FIGURE UNDER A PLOT SAYS: what is left on the plant being
-    // worked. For a plot of one plant that is simply what is left on the plot.
+    // WHAT THE FIGURE UNDER A PLOT SAYS: what is left on the whole plot, or —
+    // with CROPS.MULTI.PER_PLANT_FIGURE — on the plant being worked.
     _plotFigure(crop) {
         const P = crop.plants;
-        if (!P || P.length < 2) return this._bigNum(crop.left);
+        const perPlant = ((CONFIG.CROPS || {}).MULTI || {}).PER_PLANT_FIGURE === true;
+        if (!perPlant || !P || P.length < 2) return this._bigNum(crop.left);
         const picked = Math.max(0, (crop.total || 0) - (crop.left || 0));
         const cur = P[Math.min(P.length - 1, crop.active || 0)];
         return this._bigNum(Math.max(0, cur.end - picked));
@@ -2368,6 +2543,15 @@ class GameScene extends Phaser.Scene {
             this.tweens.killTweensOf(crop.label);
             if (crop.label.scene) crop.label.destroy();
             crop.label = null;
+        }
+
+        // ── A STUMP ──────────────────────────────────────────────────────────
+        // The plant goes and its stump stands in its place — see CROPS.STUMP.
+        // Without the stump art, it is greyed out instead, as below.
+        const cur = crop.plants && crop.plants[crop.active || 0];
+        if (cur && this._stumpOn()) {
+            this._toStump(crop, cur, 0);
+            return;
         }
 
         // ── GREYED OUT ───────────────────────────────────────────────────────
@@ -2682,7 +2866,7 @@ class GameScene extends Phaser.Scene {
         let any = false;
         for (const cr of list) {
             if (cr.regrow) { cr.regrow.remove(false); cr.regrow = null; }
-            const row = (cr.plants || []).flatMap((p) => [p.plant, p.shadow, p.fruit]);
+            const row = (cr.plants || []).flatMap((p) => [p.plant, p.shadow, p.fruit, p.stump]);
             for (const o of new Set([cr.plant, cr.fruit, cr.label, cr.shadow, cr.dots, ...row])) {
                 if (!o || !o.scene) continue;
                 any = true;

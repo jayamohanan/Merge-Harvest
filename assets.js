@@ -68,7 +68,11 @@ function sharedAssets() {
     // cuts them instead, once the real dimensions are in hand (_sliceCrops).
     const C = CONFIG.CROPS || {};
     if (C.ENABLED !== false) {
-        for (const name of (C.LEVELS || [])) A.image(cropSrcKey(name), cropFileOf(name));    }
+        for (const name of (C.LEVELS || [])) A.image(cropSrcKey(name), cropFileOf(name));
+        // What a harvested plant leaves standing — see CROPS.STUMP.
+        const ST = C.STUMP || {};
+        if (ST.ENABLED !== false) A.image('crop_stump', cropFileOf(ST.FILE || 'stump'));
+    }
     return A.list();
 }
 

@@ -118,7 +118,7 @@ var CONFIG = {
         BATCH:    4,        // icons per tick, so ~4.5 per second at the default
     },
 
-    BATTERY_START_LEVEL: 5,
+    BATTERY_START_LEVEL: 1,
     // THE ECONOMY — on the same 2.5× scale as the crop and piggy tables (see
     // THE ECONOMY'S RULES in cropData.js).
     ECONOMY: {
@@ -869,6 +869,8 @@ var CONFIG = {
             ENABLED:    true,
             WIDTH_FRAC: 0.7,
             ASPECT:     2.8,        // width ÷ height
+            RAISE:      0.1,        // centre lifted off the plant's foot line by
+                                    // this × the shadow's own height
             COLOR:      '#000000',
             ALPHA:      0.20,
             // SOLID, PRE-MIXED WITH THE GROUND. A see-through shadow darkens the
@@ -948,6 +950,19 @@ var CONFIG = {
             // It is destroyed outright when the plant is spent, rather than
             // fading: a fade would spend its whole length showing the nought the
             // figure must never show.
+
+            // WHAT EACH TICK TOOK, as a "-10" beside the figure: it starts just
+            // right of it, drifts further right and fades — the figure itself
+            // stays still, the amount it lost leaves it.
+            DELTA: {
+                ENABLED:   true,
+                SIZE_FRAC: 0.75,      // of the figure's own size
+                COLOR:     '#8a3b1c', // rust — reads as taken away
+                GAP:       4,         // off the figure's right edge, px @ design
+                DRIFT:     42,        // how far right it travels, px @ design
+                MS:        650,
+                EASE:      'Quad.easeOut',
+            },
         },
 
         // ── A SPENT PLANT ───────────────────────────────────────────────────
@@ -964,10 +979,11 @@ var CONFIG = {
         // plot's total stays exact) and they are worked FRONT TO BACK: when the
         // front plant's share is gone it pops away and the one behind steps up.
         //
-        // THE FIGURE UNDER THE PLOT IS THE PLANT BEING WORKED, not the row: it
-        // counts that one plant down to its pop, then starts on the next. A row
-        // total counting smoothly past each plant gave nothing to see when one
-        // ended and the next began. The DOTS under it keep the row's place.
+        // THE FIGURE UNDER THE PLOT is the whole plot's, counting straight down
+        // (PER_PLANT_FIGURE false) — the row itself shows how far along it is,
+        // plant by plant. PER_PLANT_FIGURE true counts the plant being worked
+        // down to its pop instead, then starts on the next, with the DOTS under
+        // it keeping the row's place.
         //
         // A tick worth more than what is left on the front plant carries on
         // into the next, so a strong pig clears several in one go — shown as a
@@ -982,9 +998,30 @@ var CONFIG = {
             // of every level, whatever COUNTS says — to see how a long row
             // looks. null for the real game. At most DEPTH.ROW_MAX.
             DEBUG_COUNT: 10,
-            STEP_X:     0.16,   // each plant behind: this × a plant's width right…
-            STEP_Y:     0.07,   // …this × its height up…
+            PER_PLANT_FIGURE: false,
+            STEP_X:     0.20,   // each plant behind: this × a plant's width right…
+            STEP_Y:     0.12,   // …this × its height up…
             SCALE_STEP: 0.05,   // …and this much smaller than the one in front
+            // Every other plant in a row mirrored, fruit and stump with it — a
+            // row of one picture reads as copies until they face different ways.
+            ALTERNATE_FLIP: true,
+            // Each plant up to this much taller or shorter (±), so a row is not
+            // a line of identical heights. Height only; its fruit stretches
+            // with it. 0 for all the same.
+            HEIGHT_JITTER: 0.08,
+            // The diagonal end to end, in plant widths, at most — a longer row
+            // packs its plants closer (STEP_Y shrinks with STEP_X) instead of
+            // being shrunk to fit. 1.2 leaves rows of up to 7 at the full step.
+            SPAN_MAX:   1.2,
+            // How far past its column a row's FRAMES may reach. A plant's frame
+            // has empty margin either side of the plant, so a little over 1
+            // still keeps the plants themselves clear of the next plot's.
+            FIT_SLACK:  1.1,
+            // PERSPECTIVE: the sideways step, per plot left to right, as a
+            // share of the full one. Flat rows stepping right by the same
+            // amount do not look parallel; each one further right steps a
+            // little less. Plant size and the upward step are not touched.
+            PLOT_STEP_X: [1, 0.65, 0.3],
             // The ones not yet being worked — 1 is fully solid, lower dims them
             // until their turn comes.
             WAITING_ALPHA: 1,
@@ -998,7 +1035,7 @@ var CONFIG = {
             // out with room for them on every level, so the slots do not jump
             // when the rows start.
             DOTS: {
-                ENABLED:  true,
+                ENABLED:  false,
                 SIZE:     5,         // radius, px @ design scale
                 GAP:      5,         // between dots
                 TOP_GAP:  2,         // under the figure
@@ -1009,6 +1046,20 @@ var CONFIG = {
                 // done, now, still to come.
                 CURRENT_FRAC: 0.4,
             },
+        },
+
+        // ── A HARVESTED PLANT LEAVES A STUMP ─────────────────────────────────
+        // Every plant, once its share is picked, is simply gone and a stump
+        // stands where it was: graphics/crop/<FILE>.webp, one frame's size of
+        // art (128 wide, like a crop sheet's frame) drawn at the plant's own
+        // scale, standing on its foot. No shrink, no greying — the stump IS
+        // the harvested plant. Its shadow is cut down to SHADOW_FRAC of the
+        // plant's, a stump casting a small one. Off (or the file missing), a
+        // finished plant goes back to the SPENT look below.
+        STUMP: {
+            ENABLED:     true,
+            FILE:        'stump',
+            SHADOW_FRAC: 0.45,
         },
 
         // TINT AND ALPHA TOGETHER. Alpha alone lets the ground through and reads
