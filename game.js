@@ -1533,6 +1533,19 @@ class GameScene extends Phaser.Scene {
         return Math.max(1, Math.min(max, Math.floor(n)));
     }
 
+    // HOW MANY PLANTS PLOT i HOLDS — the level's count on the richest plot,
+    // the others in proportion to their value (CROPS.MULTI.PROPORTIONAL), so
+    // a plant is worth about the same wherever it stands.
+    _plantsInPlot(lvl, i) {
+        const MP = (CONFIG.CROPS || {}).MULTI || {};
+        const nMax = this._plantsPerPlot(lvl);
+        if (MP.PROPORTIONAL === false || nMax <= 1) return nMax;
+        const yields = cropValuesFor(lvl);
+        const top = Math.max(...yields);
+        if (!(top > 0)) return nMax;
+        return Math.max(1, Math.min(nMax, Math.round(nMax * (yields[i] || 0) / top)));
+    }
+
     // THE GROUND SHADOW under one plant, drawn before it and never touched by
     // its shake — see CROPS.SHADOW. Sized off `w`, the plant's OWN drawn width,
     // so it tracks whatever the plant is scaled to rather than the file's raw
@@ -1655,16 +1668,21 @@ class GameScene extends Phaser.Scene {
             // next plot. Plant 0 is the FRONT one, the one being picked; the
             // rest wait behind it, dimmed.
             const MP = C.MULTI || {};
-            const n  = this._plantsPerPlot(lvl);
+            // SPACED AND SIZED BY THE LONGEST ROW (nMax), so a shorter,
+            // poorer plot's plants match the richest one's — it simply has
+            // fewer of them.
+            const nMax = this._plantsPerPlot(lvl);
+            const n    = this._plantsInPlot(lvl, i);
             const stepX = MP.STEP_X !== undefined ? MP.STEP_X : 0.16;
             const stepY = MP.STEP_Y !== undefined ? MP.STEP_Y : 0.07;
             const scStep = MP.SCALE_STEP !== undefined ? MP.SCALE_STEP : 0.05;
             // THE DIAGONAL, CAPPED: STEP_X per plant, but never more than
             // SPAN_MAX plant-widths end to end — a long row packs its plants
             // closer rather than being shrunk to fit a longer diagonal.
-            const shift = Math.min((n - 1) * stepX,
-                                   MP.SPAN_MAX !== undefined ? MP.SPAN_MAX : 0.8);
-            const dx0 = n > 1 ? shift / (n - 1) : 0;
+            const shiftMax = Math.min((nMax - 1) * stepX,
+                                      MP.SPAN_MAX !== undefined ? MP.SPAN_MAX : 0.8);
+            const dx0 = nMax > 1 ? shiftMax / (nMax - 1) : 0;
+            const shift = dx0 * (n - 1);   // this row's own diagonal
             const dy  = stepX > 0 ? stepY * dx0 / stepX : stepY;
             // PERSPECTIVE ACROSS THE PLOTS. Drawn flat, three rows stepping
             // right by the same amount do not read as parallel, so each plot
@@ -1678,8 +1696,8 @@ class GameScene extends Phaser.Scene {
             // size shrank the row more than it needed. FIT_SLACK lets the
             // frames run a little past the column, since a plant's frame has
             // empty margin either side of the plant itself.
-            const spanW = w * (shift + 0.5 + (1 - (n - 1) * scStep) / 2);
-            const fitK = n > 1 && this.plotColW
+            const spanW = w * (shiftMax + 0.5 + (1 - (nMax - 1) * scStep) / 2);
+            const fitK = nMax > 1 && this.plotColW
                 ? Math.min(1, this.plotColW * (MP.FIT_SLACK !== undefined ? MP.FIT_SLACK : 1.1) / spanW)
                 : 1;
             // Centred on that real extent, not on the plants' middles — with
@@ -2423,7 +2441,8 @@ class GameScene extends Phaser.Scene {
     // Whether harvested plants leave a stump — switched on and the art in hand.
     _stumpOn() {
         const ST = (CONFIG.CROPS || {}).STUMP || {};
-        return ST.ENABLED !== false && this.textures.exists('crop_stump');
+        if (ST.ENABLED === false) return false;
+        return ST.KEEP > 0 || this.textures.exists('crop_stump');
     }
 
     // A HARVESTED PLANT BECOMES A STUMP: the plant (and any fruit still on it)
@@ -2434,6 +2453,68 @@ class GameScene extends Phaser.Scene {
     _toStump(crop, p, delay) {
         const swap = () => {
             if (!this.crops || this.crops[crop.row] !== crop) return;
+            const ST  = (CONFIG.CROPS || {}).STUMP || {};
+            // CUT DOWN TO ITS OWN BASE (STUMP.KEEP): the plant stays, cropped
+            // to its bottom KEEP — still on its foot, since it stands from its
+            // bottom edge. Its fruit goes; its shadow is redrawn at SHADOW_FRAC.
+            if (ST.KEEP > 0 && p.plant && p.plant.scene) {
+                for (const o of [p.fruit, p.shadow]) {
+                    if (!o || !o.scene) continue;
+                    this.tweens.killTweensOf(o);
+                    o.destroy();
+                }
+                p.fruit = null;
+                if (crop.shadow === p.shadow) crop.shadow = null;
+                p.shadow = this._plantShadow(p.name, p.cx, p.baseY,
+                    p.w * (ST.SHADOW_FRAC !== undefined ? ST.SHADOW_FRAC : 0.5),
+                    this._plantDepth(p.k, 'SHADOW'));
+                if (crop.plant === p.plant) {
+                    if (crop.shake) { crop.shake.remove(); crop.shake = null; }
+                    crop.plant = null;
+                }
+                const pl = p.plant;
+                this.tweens.killTweensOf(pl);
+                const fr = pl.frame, keep = Math.min(1, ST.KEEP);
+                const keepW = ST.KEEP_W > 0 ? Math.min(1, ST.KEEP_W) : 1;   // centred
+                // SLANT_DEG as a share of the plant's height: the rise across
+                // the kept width at that angle.
+                const deg = ST.SLANT_DEG > 0 ? Math.min(80, ST.SLANT_DEG) : 0;
+                const slant = deg > 0
+                    ? pl.displayWidth * keepW * Math.tan(deg * Math.PI / 180) / pl.displayHeight
+                    : 0;
+                // Cropped to the HIGH side of the cut; the mask below takes the
+                // slant off it.
+                const hi = Math.min(1, keep + slant / 2);
+                pl.setAngle(0).setAlpha(1)
+                  .setCrop(fr.width * (1 - keepW) / 2, fr.height * (1 - hi),
+                           fr.width * keepW, fr.height * hi);
+                if (slant > 0) {
+                    // THE SLANT, as a mask drawn about the plant's foot — so
+                    // it scales with the plant if the row is shrunk away. The
+                    // high side left or right by a hash of the plant's place.
+                    const leftHigh = this._cellHash(crop.row, p.k + 101, crop.level || 0) < 0.5;
+                    // Drawn just past the kept width's edges (the crop trims
+                    // the rest), the rise worked out over that same span so
+                    // the angle is the one asked for.
+                    const H = pl.displayHeight;
+                    const xe = pl.displayWidth * keepW / 2 + 2;
+                    const t  = Math.tan(deg * Math.PI / 180);
+                    const yHi = -H * keep - xe * t;
+                    const yLo = Math.min(0, -H * keep + xe * t);
+                    const g = this.make.graphics({ x: p.cx, y: p.baseY }, false);
+                    g.fillStyle(0xffffff).fillPoints([
+                        { x: -xe, y: 0 }, { x: xe, y: 0 },
+                        { x: xe,  y: leftHigh ? yLo : yHi },
+                        { x: -xe, y: leftHigh ? yHi : yLo },
+                    ], true);
+                    pl.setMask(g.createGeometryMask());
+                    pl.stumpMask = g;
+                    pl.once('destroy', () => g.destroy());
+                }
+                p.stump = pl;
+                p.plant = null;
+                return;
+            }
             for (const o of [p.plant, p.fruit, p.shadow]) {
                 if (!o || !o.scene) continue;
                 this.tweens.killTweensOf(o);
@@ -2441,7 +2522,6 @@ class GameScene extends Phaser.Scene {
             }
             if (crop.plant === p.plant) crop.plant = null;
             p.plant = p.fruit = null;
-            const ST  = (CONFIG.CROPS || {}).STUMP || {};
             const src = this.textures.get('crop_stump').get();
             p.shadow = this._plantShadow(p.name, p.cx, p.baseY,
                 p.w * (ST.SHADOW_FRAC !== undefined ? ST.SHADOW_FRAC : 0.3),
@@ -2876,6 +2956,11 @@ class GameScene extends Phaser.Scene {
                     scaleY: o.scaleY * (N.CLEAR_SHRINK !== undefined ? N.CLEAR_SHRINK : 0.8),
                     duration: ms, ease: N.CLEAR_EASE || 'Back.easeIn',
                     onComplete: () => o.destroy() });
+                // A slanted stump's cut shrinks with it — see _toStump.
+                if (o.stumpMask) this.tweens.add({ targets: o.stumpMask,
+                    scaleX: N.CLEAR_SHRINK !== undefined ? N.CLEAR_SHRINK : 0.8,
+                    scaleY: N.CLEAR_SHRINK !== undefined ? N.CLEAR_SHRINK : 0.8,
+                    duration: ms, ease: N.CLEAR_EASE || 'Back.easeIn' });
             }
             cr.plant = cr.fruit = cr.label = cr.shadow = cr.dots = null;
             cr.plants = null;

@@ -991,13 +991,18 @@ var CONFIG = {
         // popped: it stays standing, spent (see SPENT below), as before.
         MULTI: {
             ENABLED: true,
-            // [from level, plants per plot] — levels 1 and 2 one each, then up
-            // to five (fifteen on the field).
-            COUNTS: [[1, 1], [3, 2], [6, 3], [10, 4], [15, 5]],
+            // [from level, plants in the RICHEST plot] — the other plots get
+            // plants in proportion to their value (see PROPORTIONAL).
+            COUNTS: [[1, 1], [2, 3], [4, 5], [7, 8], [10, 10]],
+            // Each plant worth about the same across the field: the richest
+            // plot gets the level's full count, the others round(count × their
+            // value ÷ the richest's), at least 1. false: every plot gets the
+            // full count.
+            PROPORTIONAL: true,
             // PREVIEW ONLY: a number here puts that many plants on every plot
             // of every level, whatever COUNTS says — to see how a long row
             // looks. null for the real game. At most DEPTH.ROW_MAX.
-            DEBUG_COUNT: 10,
+            DEBUG_COUNT: null,
             PER_PLANT_FIGURE: false,
             STEP_X:     0.20,   // each plant behind: this × a plant's width right…
             STEP_Y:     0.12,   // …this × its height up…
@@ -1056,10 +1061,20 @@ var CONFIG = {
         // the harvested plant. Its shadow is cut down to SHADOW_FRAC of the
         // plant's, a stump casting a small one. Off (or the file missing), a
         // finished plant goes back to the SPENT look below.
+        //
+        // KEEP set (0–1): no stump art at all — the plant itself is cut down to
+        // its bottom KEEP of its height, so every crop's stump is its own base,
+        // over a shadow cut to SHADOW_FRAC. null for the FILE stump above.
         STUMP: {
             ENABLED:     true,
             FILE:        'stump',
-            SHADOW_FRAC: 0.45,
+            SHADOW_FRAC: 0.5,
+            KEEP:        0.2,
+            KEEP_W:      0.2,   // …and only this middle share of its width
+            // A SLANTED CUT, not a flat one: the top at this many degrees off
+            // level, across the kept width (KEEP stays its middle). Which side
+            // is high is picked per plant. 0 for flat.
+            SLANT_DEG:   30,
         },
 
         // TINT AND ALPHA TOGETHER. Alpha alone lets the ground through and reads
