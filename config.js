@@ -836,10 +836,12 @@ var CONFIG = {
             // its produce — has to be over everything of the one behind it. So
             // each plant gets its own band: the backmost of five at ROW_BASE,
             // each nearer one ROW_STEP higher, the front plant's band the top.
+            // (Backmost of ROW_MAX, strictly.)
             // Inside a band the four layers stack by BAND's offsets, which
             // stay under ROW_STEP so no layer reaches the next plant's band.
             ROW_BASE:   3.5,
             ROW_STEP:   0.1,
+            ROW_MAX:    10,     // the longest row the bands are laid out for
             BAND: {
                 SHADOW:     0,
                 ROOT_FRUIT: 0.02,
@@ -976,6 +978,10 @@ var CONFIG = {
             // [from level, plants per plot] — levels 1 and 2 one each, then up
             // to five (fifteen on the field).
             COUNTS: [[1, 1], [3, 2], [6, 3], [10, 4], [15, 5]],
+            // PREVIEW ONLY: a number here puts that many plants on every plot
+            // of every level, whatever COUNTS says — to see how a long row
+            // looks. null for the real game. At most DEPTH.ROW_MAX.
+            DEBUG_COUNT: 10,
             STEP_X:     0.16,   // each plant behind: this × a plant's width right…
             STEP_Y:     0.07,   // …this × its height up…
             SCALE_STEP: 0.05,   // …and this much smaller than the one in front
