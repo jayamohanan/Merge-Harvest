@@ -752,6 +752,7 @@ var CONFIG = {
             GAP:        10,    // px @ design, under the banks (and above the plants)
             BORDER:     2,     // the card's edge, px @ design
             BORDER_COLOR: '#7a5232',
+            CORNER_RADIUS: 0,  // the card's corners, px @ design — 0: sharp
             DEPTH:      1,     // under the flying produce
             SWEEP_JITTER: 0.04, // the harvest's front: how ragged, × the field's length
             UPDATE_MS:  300,   // the harvest shown at most this often — picks
@@ -772,7 +773,7 @@ var CONFIG = {
             // ONE DARK SHADE over all the fields still to come, as a single
             // shape — the strips between them included. Not over the field
             // being played, nor the finished ones.
-            VEIL_ALPHA: 0.55,
+            VEIL_ALPHA: 0.35,
             VEIL_COLOR: '#1e1810',
         },
         // Timing, ms.

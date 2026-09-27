@@ -3159,6 +3159,8 @@ class GameScene extends Phaser.Scene {
         const gap  = (M.GAP !== undefined ? M.GAP : 8) * s;
         const rad  = (M.RADIUS !== undefined ? M.RADIUS : 10) * s;
         const fs   = (M.ROW_SPACING !== undefined ? M.ROW_SPACING : 16) * s;
+        // THE CARD'S OWN CORNERS — soil, shade and edge alike. 0: square.
+        const cardRad = (MI.CORNER_RADIUS !== undefined ? MI.CORNER_RADIUS : 0) * s;
         const dotR = (M.DOT_RADIUS !== undefined ? M.DOT_RADIUS : 3.2) * s;
         const fields = {};
         // Each card's paintings are its own, named by this build, and go when
@@ -3191,12 +3193,12 @@ class GameScene extends Phaser.Scene {
             sx.arcTo(X, Y, X + Wd, Y, R);
             sx.closePath();
         };
-        rr(area.x, area.y, area.w, area.h, rad);
+        rr(area.x, area.y, area.w, area.h, cardRad);
         sx.fillStyle = M.FIELD_COLOR || '#b48c64';
         sx.fill();
         // CLODS: small darker and lighter flecks, so the ground has grain.
         sx.save();
-        rr(area.x, area.y, area.w, area.h, rad);
+        rr(area.x, area.y, area.w, area.h, cardRad);
         sx.clip();
         const clods = Math.round(area.w * area.h / (fs * fs) * (M.CLOD_DENSITY !== undefined ? M.CLOD_DENSITY : 0.6));
         for (let k = 0; k < clods; k++) {
@@ -3364,7 +3366,7 @@ class GameScene extends Phaser.Scene {
         texKeys.push(veilKey);
         const veil = this.add.image(area.x, area.y, veilKey).setOrigin(0, 0)
             .setDisplaySize(veilCv.width / res, veilCv.height / res)
-            .setAlpha(MI.VEIL_ALPHA !== undefined ? MI.VEIL_ALPHA : 0.55);
+            .setAlpha(MI.VEIL_ALPHA !== undefined ? MI.VEIL_ALPHA : 0.35);
         const paintVeil = (current) => {
             const c = veilCv.getContext();
             c.setTransform(1, 0, 0, 1, 0, 0);
@@ -3372,7 +3374,7 @@ class GameScene extends Phaser.Scene {
             c.save();
             c.scale(res, res);
             c.translate(-area.x, -area.y);
-            const R = Math.min(rad, area.w / 2, area.h / 2);
+            const R = Math.min(cardRad, area.w / 2, area.h / 2);
             c.beginPath();
             c.moveTo(area.x + R, area.y);
             c.arcTo(area.x + area.w, area.y, area.x + area.w, area.y + area.h, R);
@@ -3398,7 +3400,7 @@ class GameScene extends Phaser.Scene {
         const edge = this.add.graphics();
         edge.lineStyle(Math.max(1, (MI.BORDER !== undefined ? MI.BORDER : 2) * s) / kc,
             hexColor(MI.BORDER_COLOR || '#7a5232'), 1)
-            .strokeRoundedRect(area.x, area.y, area.w, area.h, rad);
+            .strokeRoundedRect(area.x, area.y, area.w, area.h, Math.max(0.01, cardRad));
         box.add(edge);
 
         return {
