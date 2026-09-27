@@ -711,7 +711,9 @@ var CONFIG = {
         CLOD_DARK:        'rgba(90,60,35,0.28)',
         CLOD_LIGHT:       'rgba(235,205,160,0.30)',
         DOT_COLOR:        '#2f9a1c',   // the crop standing in the furrows —
-        PLANT_LIGHT:      '#7fd63a',   // …a leafy tuft, with a lighter leaf on top
+        PLANT_LIGHT:      '#7fd63a',   // …a green block, with a lighter band on top
+        PLANT_EDGE:       '#1f6e14',   // …and a darker edge
+        PLANT_TILT:       0.12,        // how far a block leans, radians either way
         PLANT_VARIANTS:   6,           // how many different tufts are drawn
         PLANT_SIZE:       3.2,         // a tuft's size, × DOT_RADIUS × 2 (each
                                        // plant then ±18% of that) — big enough
@@ -754,6 +756,13 @@ var CONFIG = {
             BORDER_COLOR: '#7a5232',
             CORNER_RADIUS: 0,  // the card's corners, px @ design — 0: sharp
             DEPTH:      1,     // under the flying produce
+            // A plant harvested rises a little and fades, rather than just
+            // going: LIFT × its size, over LIFT_MS, LIFT_STAGGER apart, at most
+            // LIFT_MAX per update (the rest of a big jump simply go).
+            LIFT:        0.35,
+            LIFT_MS:     380,
+            LIFT_STAGGER: 25,
+            LIFT_MAX:    16,
             SWEEP_JITTER: 0.04, // the harvest's front: how ragged, × the field's length
             UPDATE_MS:  300,   // the harvest shown at most this often — picks
                                // between share one repaint

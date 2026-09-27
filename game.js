@@ -3000,78 +3000,62 @@ class GameScene extends Phaser.Scene {
     // between share one repaint. `now` for a rebuild, which cannot wait.
     _fieldMapProgress(now) {
         const MI = (CONFIG.FIELD_MAP || {}).MINI || {};
-        const apply = () => {
+        const apply = (still) => {
             this._fieldMapPend = null;
             const map = this.fieldMini;
             if (!map || !map.box.scene || !this.crops) return;
             let got = 0, all = 0;
             for (const c of this.crops) { all += c.total || 0; got += Math.max(0, (c.total || 0) - (c.left || 0)); }
-            if (all > 0) map.setProgress(this.cropLevel, got / all);
+            if (all > 0) map.setProgress(this.cropLevel, got / all, still === true);
         };
-        if (now) { if (this._fieldMapPend) { this._fieldMapPend.remove(false); } apply(); return; }
+        if (now) { if (this._fieldMapPend) { this._fieldMapPend.remove(false); } apply(true); return; }
         if (this._fieldMapPend) return;
         this._fieldMapPend = this.time.delayedCall(MI.UPDATE_MS !== undefined ? MI.UPDATE_MS : 300, apply);
     }
 
-    // THE FIELD MAP'S PLANTS: a few leafy tufts, drawn once and shared by
-    // every map. Each is 4–6 leaves of uneven length fanned round a centre, in
-    // the dark green with a lighter leaf or two over the top — irregular on
-    // purpose, so a field of them reads as growing rather than as a pattern.
-    //
-    // AND THE CROP IN IT: one to three small fruits in the crop's own colour
-    // (FIELD_MAP.CROP_COLORS) among the leaves — red for tomato, yellow for
-    // pineapple — so each field says what grows there. A crop's set is made
-    // the first time it is on a map, and kept.
+    // THE FIELD MAP'S PLANTS: BLOCKS, NOT LEAVES. Each is a green square (or
+    // a rectangle a little off square), with a slightly darker edge and a
+    // lighter band along its top — and inside it one to four small squares
+    // in the crop's own colour (FIELD_MAP.CROP_COLORS), its produce. A few
+    // variants, drawn once per crop the first time it is on a map, and kept.
     _fieldTuftTextures(crop) {
         const M = CONFIG.FIELD_MAP || {};
         const n = Math.max(1, M.PLANT_VARIANTS || 6);
         const fruitCol = ((M.CROP_COLORS || {})[crop]) || M.DEFAULT_CROP_COLOR || null;
         const keys = [];
         const px = 48;
-        const c = px / 2;
         for (let i = 0; i < n; i++) {
-            const key = `field_tuft_${fruitCol ? crop : ''}_${i}`;
+            const key = `field_block_${fruitCol ? crop : ''}_${i}`;
             keys.push(key);
             if (this.textures.exists(key)) continue;
             const cv = this.textures.createCanvas(key, px, px);
             const ctx = cv.getContext();
             const rnd = (k) => this._cellHash(i, k, 977);
-            const leaves = 4 + Math.floor(rnd(1) * 3);
-            const a0 = rnd(2) * Math.PI * 2;
-            const leaf = (ang, len, wid, col) => {
-                ctx.save();
-                ctx.translate(c, c);
-                ctx.rotate(ang);
-                ctx.fillStyle = col;
-                ctx.beginPath();
-                ctx.ellipse(len * 0.5, 0, len * 0.5, wid, 0, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-            };
-            for (let k = 0; k < leaves; k++) {
-                const ang = a0 + (k / leaves) * Math.PI * 2 + (rnd(10 + k) - 0.5) * 0.9;
-                leaf(ang, c * (0.62 + 0.36 * rnd(20 + k)), c * (0.2 + 0.12 * rnd(30 + k)),
-                     M.DOT_COLOR || '#2f9a1c');
-            }
-            // A lighter leaf or two on top, catching the light.
-            const lights = 1 + Math.floor(rnd(3) * 2);
-            for (let k = 0; k < lights; k++) {
-                leaf(a0 + rnd(40 + k) * Math.PI * 2, c * (0.45 + 0.25 * rnd(50 + k)), c * 0.17,
-                     M.PLANT_LIGHT || '#7fd63a');
-            }
-            // The fruit, over the leaves: a small round each, with a speck of
-            // light on it so it reads as fruit and not as a hole in the leaves.
+            // The block: square, or up to a fifth off square either way.
+            const ar = 0.8 + 0.4 * rnd(1);
+            const bw = ar >= 1 ? px - 4 : (px - 4) * ar;
+            const bh = ar >= 1 ? (px - 4) / ar : px - 4;
+            const bx = (px - bw) / 2, by = (px - bh) / 2;
+            ctx.fillStyle = M.PLANT_EDGE || '#1f6e14';
+            ctx.fillRect(bx, by, bw, bh);
+            const e = Math.max(2, px * 0.06);
+            ctx.fillStyle = M.DOT_COLOR || '#2f9a1c';
+            ctx.fillRect(bx + e, by + e, bw - 2 * e, bh - 2 * e);
+            ctx.fillStyle = M.PLANT_LIGHT || '#7fd63a';
+            ctx.fillRect(bx + e, by + e, bw - 2 * e, Math.max(2, bh * 0.14));
+            // The produce: small squares on a loose 2×2 grid inside the block,
+            // one to four of them, each with a light corner.
             if (fruitCol) {
-                const fr = M.FRUIT_SIZE !== undefined ? M.FRUIT_SIZE : 0.22;
-                const count = 1 + Math.floor(rnd(60) * 3);
-                for (let k = 0; k < count; k++) {
-                    const ang = rnd(70 + k) * Math.PI * 2, dist = c * (0.12 + 0.3 * rnd(80 + k));
-                    const fx = c + Math.cos(ang) * dist, fy = c + Math.sin(ang) * dist;
-                    const r = c * fr * (0.8 + 0.4 * rnd(90 + k));
+                const count = 1 + Math.floor(rnd(2) * 4);
+                const cells = [0, 1, 2, 3].sort((a, b) => rnd(10 + a) - rnd(10 + b)).slice(0, count);
+                const q = Math.min(bw, bh) * (M.FRUIT_SIZE !== undefined ? M.FRUIT_SIZE : 0.22) * 1.3;
+                for (const cell of cells) {
+                    const cx = bx + bw * (cell % 2 ? 0.7 : 0.3) + (rnd(20 + cell) - 0.5) * bw * 0.1;
+                    const cy = by + bh * (cell < 2 ? 0.36 : 0.72) + (rnd(30 + cell) - 0.5) * bh * 0.1;
                     ctx.fillStyle = fruitCol;
-                    ctx.beginPath(); ctx.arc(fx, fy, r, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillRect(cx - q / 2, cy - q / 2, q, q);
                     ctx.fillStyle = 'rgba(255,255,255,0.45)';
-                    ctx.beginPath(); ctx.arc(fx - r * 0.3, fy - r * 0.3, r * 0.35, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillRect(cx - q / 2, cy - q / 2, q * 0.4, q * 0.4);
                 }
             }
             cv.refresh();
@@ -3292,7 +3276,9 @@ class GameScene extends Phaser.Scene {
                     f.plants.push({
                         x: px + (h1 - 0.5) * 2 * jit, y: py + (h2 - 0.5) * 2 * jit,
                         key: tufts[Math.floor(h3 * tufts.length) % tufts.length],
-                        rot: h4 * Math.PI * 2,
+                        // Blocks stand near upright — a slight tilt only
+                        // (PLANT_TILT, radians either way), not spun about.
+                        rot: (h4 - 0.5) * 2 * (M.PLANT_TILT !== undefined ? M.PLANT_TILT : 0.12),
                         d: dotR * 2 * (M.PLANT_SIZE !== undefined ? M.PLANT_SIZE : 1.25) * (0.82 + 0.36 * h1),
                         k: h2,
                     });
@@ -3407,20 +3393,43 @@ class GameScene extends Phaser.Scene {
             box, batch,
             // A FIELD THINNED TO `frac` harvested: the next plants in its order
             // erased from its painting, then one upload. Only ever forward.
-            setProgress: (lvl, frac) => {
+            //
+            // AND THE ONES TAKEN RISE: each plant erased is put back up for a
+            // moment as its own image, lifted a little and faded out, so a
+            // harvest reads as the crop coming up off the field. Only a few go
+            // per update (MINI.LIFT_MAX) — the rest of a big jump, and every
+            // plant on a rebuild (`still`), just go.
+            setProgress: (lvl, frac, still) => {
                 const f = fields[lvl];
                 if (!f || !f.cv || !f.order.length) return;
                 const want = Math.min(f.order.length, Math.floor(Math.max(0, Math.min(1, frac)) * f.order.length));
                 if (want <= f.cleared) return;
+                if (!still) {
+                    const max = MI.LIFT_MAX !== undefined ? MI.LIFT_MAX : 16;
+                    const at = box.getIndex(veil);
+                    for (let j = f.cleared, n = 0; j < want && n < max; j++, n++) {
+                        const q = f.plants[f.order[j]];
+                        const img = this.add.image(q.x, q.y, q.key).setDisplaySize(q.d, q.d).setRotation(q.rot);
+                        box.addAt(img, at);
+                        this.tweens.add({ targets: img,
+                            y: q.y - q.d * (MI.LIFT !== undefined ? MI.LIFT : 0.35), alpha: 0,
+                            duration: MI.LIFT_MS !== undefined ? MI.LIFT_MS : 380,
+                            delay: n * (MI.LIFT_STAGGER !== undefined ? MI.LIFT_STAGGER : 25),
+                            ease: 'Quad.easeOut', onComplete: () => img.destroy() });
+                    }
+                }
                 const c = f.ctx;
                 c.save();
                 c.setTransform(f.res, 0, 0, f.res, 0, 0);
                 c.globalCompositeOperation = 'destination-out';
+                // Each block's own square, turned as it stands, a hair over.
                 for (let j = f.cleared; j < want; j++) {
                     const q = f.plants[f.order[j]];
-                    c.beginPath();
-                    c.arc(q.x - f.x, q.y - f.y, q.d * 0.55, 0, Math.PI * 2);
-                    c.fill();
+                    c.save();
+                    c.translate(q.x - f.x, q.y - f.y);
+                    c.rotate(q.rot);
+                    c.fillRect(-q.d * 0.52, -q.d * 0.52, q.d * 1.04, q.d * 1.04);
+                    c.restore();
                 }
                 c.restore();
                 f.cleared = want;
