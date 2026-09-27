@@ -38,8 +38,14 @@ function assetList() {
 function sharedAssets() {
     const A = assetList();
 
-    const startData = getBatteryData(CONFIG.BATTERY_START_LEVEL);
-    if (startData) A.image(`battery${CONFIG.BATTERY_START_LEVEL}`, startData.path);
+    // THE PICTURE THE STARTING PIG WEARS, not its level: past the last item
+    // the art loops (getBatteryIconLevel — level 98 wears item_14), and every
+    // sprite asks for its texture by that looped number. Preloading the raw
+    // level asked for a file that does not exist, and the first pig was built
+    // on Phaser's placeholder instead.
+    const startIcon = getBatteryIconLevel(CONFIG.BATTERY_START_LEVEL);
+    const startData = getBatteryData(startIcon);
+    if (startData) A.image(`battery${startIcon}`, startData.path);
     A.image('coin',       'graphics/ui/merge-grid/coin.png');
     // Where the harvest goes — three of them over the field, one per plot.
     A.image('piggy_bank', 'graphics/ui/piggy_bank.png');

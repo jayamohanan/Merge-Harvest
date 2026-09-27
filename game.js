@@ -580,8 +580,10 @@ class GameScene extends Phaser.Scene {
         // then given back how far they had been picked.
         this.createSlots();
         this.buildCrops(this.cropLevel, false);
+        this._makeFieldMini();
         (this.crops || []).forEach((c, i) => this._restoreCrop(c, kept[i]));
         this._setFarmHarvested();
+        this._fieldMapProgress(true);
 
         // The merge half.
         this.createGrid();
@@ -787,6 +789,7 @@ class GameScene extends Phaser.Scene {
         this._sliceCrops();
         this.createSlots();
         this.buildCrops();
+        this._makeFieldMini();
 
         // The merge half
         this.createGrid();
@@ -1361,8 +1364,7 @@ class GameScene extends Phaser.Scene {
         const cs = this.farmHarvStyle = this._farmInfoStyle(F.AREA_SIZE || 24, F.AREA_COLOR || '#5b3a1c');
         const gap = (F.LINE_GAP !== undefined ? F.LINE_GAP : 0) * s;
 
-        const title = (F.NAMES || {})[name]
-            || name.split(/[-_ ]+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        const title = this._cropTitle(name);
         // The level's own number, so the run reads as a count of farms — the
         // crop list wraps, and "Tomato Farm" alone would repeat every 16 levels.
         // {total} is how many levels there are — one per row of CROP_VALUES.
@@ -1884,6 +1886,7 @@ class GameScene extends Phaser.Scene {
         // fruit coming off the plant beside it; a label that jumps as well makes
         // two announcements of one event and neither is read.
         this._setFarmHarvested();
+        this._fieldMapProgress();
 
         const last = crop.left <= 0;
         // EVERY PLANT THIS TICK CLEARS GIVES UP ITS FRUIT, not just the one
@@ -2478,7 +2481,13 @@ class GameScene extends Phaser.Scene {
                 const keepW = ST.KEEP_W > 0 ? Math.min(1, ST.KEEP_W) : 1;   // centred
                 // SLANT_DEG as a share of the plant's height: the rise across
                 // the kept width at that angle.
-                const deg = ST.SLANT_DEG > 0 ? Math.min(80, ST.SLANT_DEG) : 0;
+                // Per plant, between SLANT_MIN_DEG and SLANT_DEG — a stable hash
+                // of its place, so a stump keeps its angle for good.
+                const dMax = ST.SLANT_DEG > 0 ? Math.min(80, ST.SLANT_DEG) : 0;
+                const dMin = Math.min(dMax, Math.max(0, ST.SLANT_MIN_DEG || 0));
+                const deg  = dMax > 0
+                    ? dMin + (dMax - dMin) * this._cellHash(crop.row, p.k + 211, crop.level || 0)
+                    : 0;
                 const slant = deg > 0
                     ? pl.displayWidth * keepW * Math.tan(deg * Math.PI / 180) / pl.displayHeight
                     : 0;
@@ -2927,11 +2936,524 @@ class GameScene extends Phaser.Scene {
         // A beat to see the field standing finished before it is cleared.
         this.time.delayedCall(N.DELAY_MS !== undefined ? N.DELAY_MS : 700, () => {
             this._clearCrops(() => {
+                // The field map's card moves on with it — see _advanceFieldMap.
+                this._advanceFieldMap(this.cropLevel);
                 this.cropLevel++;
                 this.buildCrops(undefined, true);
                 this._levelTurning = false;
             });
         });
+    }
+
+    // ── The field map ────────────────────────────────────────────────────────
+    // THE RUN, FIVE LEVELS AT A TIME, as a small farm seen from above: a card
+    // top right of the farm half, under the banks. Levels 1–5 are one map,
+    // 6–10 the next, and so on — five fields, each one level, sized by the
+    // SQUARE ROOT of that level's crop total, so level 1 is still a field
+    // beside level 5. Finished fields are bare soil; the level being played is
+    // framed and thins out AS ITS CROP IS HARVESTED; the ones to come stand
+    // full. After the fifth the card becomes the next batch's.
+    //
+    // A REPRESENTATION, BUILT FOR COST: the soil is one painted image and each
+    // field's crop another, so the whole card is a handful of objects. The
+    // harvest shows by ERASING plants from the field's painting a few at a
+    // time — no sprites, no tweens — batched to MINI.UPDATE_MS. See
+    // CONFIG.FIELD_MAP.
+
+    // A LEVEL IS OVER: its field cleared, the frame handed on to the next, and
+    // after the fifth the next batch's card. Nothing waits on it — the level
+    // turn carries straight on.
+    _advanceFieldMap(finished) {
+        const M  = CONFIG.FIELD_MAP || {};
+        const MI = M.MINI || {};
+        const map = this.fieldMini;
+        if (M.ENABLED === false || !map || !map.box.scene) return;
+        const batchOf = (lvl) => Math.floor((lvl - 1) / 5);
+        const last = CROP_VALUES.length;
+        map.setProgress(finished, 1);
+        const handMs = M.MARK_HANDOFF_MS !== undefined ? M.MARK_HANDOFF_MS : 220;
+        const next = finished + 1;
+        if (next > last) { map.unmark(finished, handMs); return; }
+        if (batchOf(next) === map.batch) {
+            // THE FRAME MOVES ON IN TWO STEPS: off the finished field first,
+            // and only once it has gone, onto the next.
+            map.unmark(finished, handMs);
+            this.time.delayedCall(handMs, () => {
+                if (!map.box.scene) return;
+                map.mark(next);
+                map.setCurrent(next);
+            });
+            return;
+        }
+        // THE LAST OF FIVE: the finished card fades as the next batch's comes up.
+        const swapMs = M.SWAP_MS !== undefined ? M.SWAP_MS : 380;
+        const fresh = this._buildFieldMap(batchOf(next), next);
+        fresh.mark(next);
+        fresh.setCurrent(next);
+        fresh.box.setAlpha(0);
+        this.fieldMini = fresh;
+        this.tweens.add({ targets: map.box, alpha: 0, duration: swapMs, delay: handMs,
+            onComplete: () => { if (map.box.scene) map.box.destroy(); } });
+        this.tweens.add({ targets: fresh.box, alpha: 1, duration: swapMs, delay: handMs });
+    }
+
+    // THE CURRENT FIELD KEEPS UP WITH THE HARVEST — the share of this level's
+    // crop picked so far, taken off the field's painting. Called on every
+    // pick, but only ever applied once per MINI.UPDATE_MS: picks landing
+    // between share one repaint. `now` for a rebuild, which cannot wait.
+    _fieldMapProgress(now) {
+        const MI = (CONFIG.FIELD_MAP || {}).MINI || {};
+        const apply = () => {
+            this._fieldMapPend = null;
+            const map = this.fieldMini;
+            if (!map || !map.box.scene || !this.crops) return;
+            let got = 0, all = 0;
+            for (const c of this.crops) { all += c.total || 0; got += Math.max(0, (c.total || 0) - (c.left || 0)); }
+            if (all > 0) map.setProgress(this.cropLevel, got / all);
+        };
+        if (now) { if (this._fieldMapPend) { this._fieldMapPend.remove(false); } apply(); return; }
+        if (this._fieldMapPend) return;
+        this._fieldMapPend = this.time.delayedCall(MI.UPDATE_MS !== undefined ? MI.UPDATE_MS : 300, apply);
+    }
+
+    // THE FIELD MAP'S PLANTS: a few leafy tufts, drawn once and shared by
+    // every map. Each is 4–6 leaves of uneven length fanned round a centre, in
+    // the dark green with a lighter leaf or two over the top — irregular on
+    // purpose, so a field of them reads as growing rather than as a pattern.
+    //
+    // AND THE CROP IN IT: one to three small fruits in the crop's own colour
+    // (FIELD_MAP.CROP_COLORS) among the leaves — red for tomato, yellow for
+    // pineapple — so each field says what grows there. A crop's set is made
+    // the first time it is on a map, and kept.
+    _fieldTuftTextures(crop) {
+        const M = CONFIG.FIELD_MAP || {};
+        const n = Math.max(1, M.PLANT_VARIANTS || 6);
+        const fruitCol = ((M.CROP_COLORS || {})[crop]) || M.DEFAULT_CROP_COLOR || null;
+        const keys = [];
+        const px = 48;
+        const c = px / 2;
+        for (let i = 0; i < n; i++) {
+            const key = `field_tuft_${fruitCol ? crop : ''}_${i}`;
+            keys.push(key);
+            if (this.textures.exists(key)) continue;
+            const cv = this.textures.createCanvas(key, px, px);
+            const ctx = cv.getContext();
+            const rnd = (k) => this._cellHash(i, k, 977);
+            const leaves = 4 + Math.floor(rnd(1) * 3);
+            const a0 = rnd(2) * Math.PI * 2;
+            const leaf = (ang, len, wid, col) => {
+                ctx.save();
+                ctx.translate(c, c);
+                ctx.rotate(ang);
+                ctx.fillStyle = col;
+                ctx.beginPath();
+                ctx.ellipse(len * 0.5, 0, len * 0.5, wid, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            };
+            for (let k = 0; k < leaves; k++) {
+                const ang = a0 + (k / leaves) * Math.PI * 2 + (rnd(10 + k) - 0.5) * 0.9;
+                leaf(ang, c * (0.62 + 0.36 * rnd(20 + k)), c * (0.2 + 0.12 * rnd(30 + k)),
+                     M.DOT_COLOR || '#2f6b1c');
+            }
+            // A lighter leaf or two on top, catching the light.
+            const lights = 1 + Math.floor(rnd(3) * 2);
+            for (let k = 0; k < lights; k++) {
+                leaf(a0 + rnd(40 + k) * Math.PI * 2, c * (0.45 + 0.25 * rnd(50 + k)), c * 0.17,
+                     M.PLANT_LIGHT || '#4f8f2c');
+            }
+            // The fruit, over the leaves: a small round each, with a speck of
+            // light on it so it reads as fruit and not as a hole in the leaves.
+            if (fruitCol) {
+                const fr = M.FRUIT_SIZE !== undefined ? M.FRUIT_SIZE : 0.22;
+                const count = 1 + Math.floor(rnd(60) * 3);
+                for (let k = 0; k < count; k++) {
+                    const ang = rnd(70 + k) * Math.PI * 2, dist = c * (0.12 + 0.3 * rnd(80 + k));
+                    const fx = c + Math.cos(ang) * dist, fy = c + Math.sin(ang) * dist;
+                    const r = c * fr * (0.8 + 0.4 * rnd(90 + k));
+                    ctx.fillStyle = fruitCol;
+                    ctx.beginPath(); ctx.arc(fx, fy, r, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+                    ctx.beginPath(); ctx.arc(fx - r * 0.3, fy - r * 0.3, r * 0.35, 0, Math.PI * 2); ctx.fill();
+                }
+            }
+            cv.refresh();
+        }
+        return keys;
+    }
+
+    // The card, put up for the level being played — called whenever the farm
+    // half is laid out. None past the last level.
+    _makeFieldMini() {
+        const M = CONFIG.FIELD_MAP || {};
+        if (this.fieldMini && this.fieldMini.box.scene) this.fieldMini.box.destroy();
+        this.fieldMini = null;
+        const lvl = this.cropLevel;
+        if (M.ENABLED === false || !(lvl <= CROP_VALUES.length)) return;
+        const map = this._buildFieldMap(Math.floor((lvl - 1) / 5), lvl);
+        map.mark(lvl);
+        map.setCurrent(lvl);
+        this.fieldMini = map;
+    }
+
+    // WHERE THE CARD STANDS: top right of the farm half, just under the banks,
+    // WIDTH_FRAC of the half's width — or less, if that would reach down into
+    // the plants. `aspect` is the card's own height over width.
+    _fieldMiniRect(aspect) {
+        const MI = (CONFIG.FIELD_MAP || {}).MINI || {};
+        const B  = this.layoutConfig.partB;
+        const s  = this.layoutConfig.scale;
+        const gap = (MI.GAP !== undefined ? MI.GAP : 10) * s;
+        const top = (this.pigRow ? this.pigRow.bottom : B.y) + gap;
+        const floor = this.farmInfoAt ? this.farmInfoAt.bottom - gap : B.y + B.height * 0.4;
+        if (!(aspect > 0)) aspect = B.height / B.width;
+        let w = B.width * (MI.WIDTH_FRAC !== undefined ? MI.WIDTH_FRAC : 0.24);
+        let h = w * aspect;
+        if (h > floor - top) { h = Math.max(20 * s, floor - top); w = h / aspect; }
+        const x = B.x + B.width - (MI.PAD !== undefined ? MI.PAD : 24) * s - w;
+        return { x, y: top, w, h };
+    }
+
+    // ONE BATCH'S CARD. Laid out in the farm half's own coordinates — the
+    // proportions a whole half gives five fields — and then the container is
+    // scaled down into the corner. Paintings are made at the CARD's size (×
+    // MINI.BAKE_SCALE for crispness), not the half's, since that is all they
+    // are ever shown at. Fields below `doneBelow` are bare.
+    _buildFieldMap(batch, doneBelow) {
+        const M  = CONFIG.FIELD_MAP || {};
+        const MI = M.MINI || {};
+        const B  = this.layoutConfig.partB;
+        const s  = this.layoutConfig.scale;
+        const box = this.add.container(0, 0).setDepth(MI.DEPTH !== undefined ? MI.DEPTH : 1);
+        const first = batch * 5 + 1;
+        const levels = [];
+        for (let l = first; l < first + 5 && l <= CROP_VALUES.length; l++) levels.push(l);
+
+        const pad  = (M.PAD !== undefined ? M.PAD : 24) * s;
+        const area = { x: B.x + pad, y: B.y + pad, w: B.width - 2 * pad, h: B.height - 2 * pad };
+        const card = this._fieldMiniRect(area.h / area.w);
+        const kc   = card.w / area.w || 1;
+        box.setPosition(card.x - area.x * kc, card.y - area.y * kc).setScale(kc);
+        // What the paintings are made at, against the half's own pixels.
+        const res = Math.min(1, Math.max(0.05, kc * (MI.BAKE_SCALE !== undefined ? MI.BAKE_SCALE : 1.25)));
+
+        // THE LAYOUT, and a different face for every batch: squarified, then
+        // turned — transposed on odd batches, mirrored across and down on
+        // others — so five fields of similar proportions never come out in
+        // the same corner twice running.
+        const weights = levels.map((l) => Math.sqrt(cropValuesFor(l).reduce((a, v) => a + v, 0)));
+        const flipT = batch % 2 === 1, flipX = (batch >> 1) % 2 === 1, flipY = (batch >> 2) % 2 === 1;
+        const W = flipT ? area.h : area.w, H = flipT ? area.w : area.h;
+        const rects = this._squarify(weights, W, H).map((r) => {
+            let q = flipT ? { x: r.y, y: r.x, w: r.h, h: r.w } : r;
+            if (flipX) q = { ...q, x: area.w - q.x - q.w };
+            if (flipY) q = { ...q, y: area.h - q.y - q.h };
+            return { x: area.x + q.x, y: area.y + q.y, w: q.w, h: q.h };
+        });
+
+        const gap  = (M.GAP !== undefined ? M.GAP : 8) * s;
+        const rad  = (M.RADIUS !== undefined ? M.RADIUS : 10) * s;
+        const fs   = (M.ROW_SPACING !== undefined ? M.ROW_SPACING : 16) * s;
+        const dotR = (M.DOT_RADIUS !== undefined ? M.DOT_RADIUS : 3.2) * s;
+        const fields = {};
+        const marks = [];
+        // Each card's paintings are its own, named by this build, and go when
+        // the card does — a frame after, once nothing draws with them.
+        const uid = this._fieldMapUid = (this._fieldMapUid || 0) + 1;
+        const texKeys = [];
+        box.once('destroy', () => this.events.once('postupdate', () => {
+            for (const k of texKeys) if (this.textures.exists(k)) this.textures.remove(k);
+        }));
+        const numBox = this.add.container(0, 0);
+        const miniInset = (MI.NUMBER_INSET !== undefined ? MI.NUMBER_INSET : 3) * s / kc;
+
+        // THE SOIL: one ploughed plot for the whole card, its clods and every
+        // field's raised rows painted into one image.
+        const soilKey = `field_soil_${uid}`;
+        const soilCv = this.textures.createCanvas(soilKey,
+            Math.max(1, Math.ceil(area.w * res)), Math.max(1, Math.ceil(area.h * res)));
+        texKeys.push(soilKey);
+        const sx = soilCv.getContext();
+        sx.save();
+        sx.scale(res, res);
+        sx.translate(-area.x, -area.y);                // draw in the half's own coordinates
+        const rr = (X, Y, Wd, Ht, R) => {
+            R = Math.min(R, Wd / 2, Ht / 2);
+            sx.beginPath();
+            sx.moveTo(X + R, Y);
+            sx.arcTo(X + Wd, Y, X + Wd, Y + Ht, R);
+            sx.arcTo(X + Wd, Y + Ht, X, Y + Ht, R);
+            sx.arcTo(X, Y + Ht, X, Y, R);
+            sx.arcTo(X, Y, X + Wd, Y, R);
+            sx.closePath();
+        };
+        rr(area.x, area.y, area.w, area.h, rad);
+        sx.fillStyle = M.FIELD_COLOR || '#b48c64';
+        sx.fill();
+        // CLODS: small darker and lighter flecks, so the ground has grain.
+        sx.save();
+        rr(area.x, area.y, area.w, area.h, rad);
+        sx.clip();
+        const clods = Math.round(area.w * area.h / (fs * fs) * (M.CLOD_DENSITY !== undefined ? M.CLOD_DENSITY : 0.6));
+        for (let k = 0; k < clods; k++) {
+            const hx = this._cellHash(k, 1, batch + 31), hy = this._cellHash(k, 2, batch + 31);
+            const hs = this._cellHash(k, 3, batch + 31);
+            sx.fillStyle = hs < 0.5 ? (M.CLOD_DARK || 'rgba(90,60,35,0.28)') : (M.CLOD_LIGHT || 'rgba(235,205,160,0.30)');
+            sx.beginPath();
+            sx.ellipse(area.x + hx * area.w, area.y + hy * area.h,
+                fs * (0.06 + 0.1 * hs), fs * (0.04 + 0.07 * hs), hs * 6.28, 0, Math.PI * 2);
+            sx.fill();
+        }
+        sx.restore();
+        box.add(this.add.image(area.x, area.y, soilKey).setOrigin(0, 0)
+            .setDisplaySize(soilCv.width / res, soilCv.height / res));
+
+        // A ROW OF HEAPED EARTH: near straight, thickening and thinning a
+        // little, some split in two, shaded as raised — lit from the top left.
+        const fW  = Math.max(1, (M.FURROW_WIDTH !== undefined ? M.FURROW_WIDTH : 4.5) * s);
+        const wob = (M.FURROW_WOBBLE !== undefined ? M.FURROW_WOBBLE : 0.02) * fs;
+        const furrow = (x0, y0, x1, y1, seed) => {
+            const L = Math.hypot(x1 - x0, y1 - y0) || 1;
+            const ux = (x1 - x0) / L, uy = (y1 - y0) / L, nx = -uy, ny = ux;
+            const step = fs * 0.7;
+            const split = this._cellHash(seed, 0, 53) < (M.FURROW_SPLIT_CHANCE !== undefined ? M.FURROW_SPLIT_CHANCE : 0.3);
+            const gapAt = L * (0.25 + 0.5 * this._cellHash(seed, 0, 59));
+            const gapHalf = fs * (M.FURROW_SPLIT_GAP !== undefined ? M.FURROW_SPLIT_GAP : 0.35);
+            const runs = split ? [[0, gapAt - gapHalf], [gapAt + gapHalf, L]] : [[0, L]];
+            const pts = [];
+            let k = 0;
+            for (const [r0, r1] of runs) {
+                if (r1 - r0 < fs * 0.3) continue;
+                for (let d = r0, firstPt = true; ; d += step, firstPt = false) {
+                    const dd = Math.min(d, r1);
+                    const o = (this._cellHash(seed, k, 41) - 0.5) * 2 * wob;
+                    pts.push({ x: x0 + ux * dd + nx * o, y: y0 + uy * dd + ny * o,
+                               w: 0.8 + 0.35 * this._cellHash(seed, k, 43), gap: firstPt });
+                    k++;
+                    if (dd >= r1) break;
+                }
+            }
+            const lit = (nx * -0.6 + ny * -0.8) >= 0 ? 1 : -1;
+            const lx = nx * lit, ly = ny * lit;
+            const seg = (a0, a1, off, col, width) => {
+                sx.strokeStyle = col;
+                sx.lineWidth = width;
+                sx.beginPath();
+                sx.moveTo(a0.x + lx * off, a0.y + ly * off);
+                sx.lineTo(a1.x + lx * off, a1.y + ly * off);
+                sx.stroke();
+            };
+            sx.lineCap = 'round';
+            for (let j = 1; j < pts.length; j++) {
+                const a0 = pts[j - 1], a1 = pts[j];
+                if (a1.gap) continue;
+                seg(a0, a1, -fW * 0.45, M.RIDGE_SHADOW || 'rgba(70,45,25,0.42)', fW * 1.15 * a1.w);
+                seg(a0, a1, 0,          M.RIDGE_BODY   || '#c7a077',              fW * a1.w);
+                seg(a0, a1,  fW * 0.28, M.RIDGE_LIGHT  || 'rgba(248,226,188,0.75)', fW * 0.32 * a1.w);
+            }
+        };
+
+        levels.forEach((lvl, i) => {
+            const r = rects[i];
+            const x = r.x + gap / 2, y = r.y + gap / 2, w = Math.max(4, r.w - gap), h = Math.max(4, r.h - gap);
+            const name = this._cropForLevel(lvl);
+            const f = { lvl, cv: null, ctx: null, x, y, res, plants: [], order: [], cleared: 0 };
+            const done = lvl < doneBelow;
+
+            // The rows run along the field's long side; fields are told apart
+            // by their rows' direction and the plain strips between them.
+            const along = w >= h;
+            const rows = [];
+            if (along) for (let yy = y + fs * 0.75; yy < y + h - fs * 0.4; yy += fs) rows.push(yy);
+            else       for (let xx = x + fs * 0.75; xx < x + w - fs * 0.4; xx += fs) rows.push(xx);
+            rows.forEach((v, k) => {
+                const seed = lvl * 97 + k;
+                if (along) furrow(x + rad * 0.6, v, x + w - rad * 0.6, v, seed);
+                else       furrow(v, y + rad * 0.6, v, y + h - rad * 0.6, seed);
+            });
+
+            // THE CROP: leafy tufts with the crop's fruit (_fieldTuftTextures),
+            // each turned, sized and nudged by a stable hash, staggered row to
+            // row — all painted into this field's one image.
+            if (!done) {
+                const tufts = this._fieldTuftTextures(name);
+                const jit = (M.PLANT_JITTER !== undefined ? M.PLANT_JITTER : 0.14) * fs;
+                let n = 0;
+                const plant = (px, py) => {
+                    const h1 = this._cellHash(lvl * 131 + n, 7, batch), h2 = this._cellHash(lvl * 131 + n, 11, batch);
+                    const h3 = this._cellHash(lvl * 131 + n, 13, batch), h4 = this._cellHash(lvl * 131 + n, 17, batch);
+                    n++;
+                    f.plants.push({
+                        x: px + (h1 - 0.5) * 2 * jit, y: py + (h2 - 0.5) * 2 * jit,
+                        key: tufts[Math.floor(h3 * tufts.length) % tufts.length],
+                        rot: h4 * Math.PI * 2,
+                        d: dotR * 2 * (M.PLANT_SIZE !== undefined ? M.PLANT_SIZE : 1.25) * (0.82 + 0.36 * h1),
+                        k: h2,
+                    });
+                };
+                rows.forEach((v, k) => {
+                    const off = fs * (k % 2 ? 1 : 0.6);
+                    if (along) for (let xx = x + off; xx < x + w - fs * 0.4; xx += fs) plant(xx, v);
+                    else       for (let yy = y + off; yy < y + h - fs * 0.4; yy += fs) plant(v, yy);
+                });
+                if (f.plants.length) {
+                    const key = `field_crop_${uid}_${lvl}`;
+                    const cw = Math.max(1, Math.ceil(w * res)), ch = Math.max(1, Math.ceil(h * res));
+                    f.cv = this.textures.createCanvas(key, cw, ch);
+                    f.ctx = f.cv.getContext();
+                    f.ctx.setTransform(res, 0, 0, res, 0, 0);
+                    for (const q of f.plants) {
+                        f.ctx.save();
+                        f.ctx.translate(q.x - x, q.y - y);
+                        f.ctx.rotate(q.rot);
+                        f.ctx.drawImage(this.textures.get(q.key).getSourceImage(), -q.d / 2, -q.d / 2, q.d, q.d);
+                        f.ctx.restore();
+                    }
+                    f.cv.refresh();
+                    texKeys.push(key);
+                    box.add(this.add.image(x, y, key).setOrigin(0, 0).setDisplaySize(cw / res, ch / res));
+                    // THE ORDER THE HARVEST TAKES THEM: loosely across the
+                    // field from one corner to the one diagonally opposite —
+                    // which pair set by how the batch is turned — each plant's
+                    // place nudged by its own hash so it never reads as a wipe.
+                    const fx = flipX ? x : x + w, fy = flipY ? y : y + h;
+                    const dx = (flipX ? x + w : x) - fx, dy = (flipY ? y + h : y) - fy;
+                    const l2 = dx * dx + dy * dy || 1;
+                    f.order = f.plants.map((q, j) => ({ j,
+                        t: Math.max(0, Math.min(1, ((q.x - fx) * dx + (q.y - fy) * dy) / l2)) * 0.6 + q.k * 0.4 }))
+                        .sort((a, b) => a.t - b.t).map((o) => o.j);
+                }
+            }
+
+            // THE FRAME on the level being played — dark under light, so it
+            // holds on both the sand and the soil.
+            f.mark = this.add.graphics();
+            const mw = Math.max(2, (M.MARK_WIDTH !== undefined ? M.MARK_WIDTH : 5) * s);
+            f.mark.lineStyle(mw * 1.9, hexColor(M.MARK_EDGE || '#3b2a17'), 1)
+                .strokeRoundedRect(x - 2 * s, y - 2 * s, w + 4 * s, h + 4 * s, rad + 2 * s);
+            f.mark.lineStyle(mw, hexColor(M.MARK_COLOR || '#fff6e0'), 1)
+                .strokeRoundedRect(x - 2 * s, y - 2 * s, w + 4 * s, h + 4 * s, rad + 2 * s);
+            f.mark.setAlpha(0);
+            marks.push(f.mark);
+
+            // THE LEVEL NUMBER, top left inside the field: sized for the card
+            // (MINI.NUMBER_SIZE there), so drawn big here by how much the card
+            // shrinks it, and fitted inside the field.
+            f.num = this.add.text(x + miniInset, y + miniInset, String(lvl), {
+                fontSize: Math.round((MI.NUMBER_SIZE !== undefined ? MI.NUMBER_SIZE : 20) * s / kc) + 'px',
+                fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
+                color: MI.NUMBER_COLOR || '#fff6e0',
+                stroke: MI.NUMBER_STROKE || '#3b2a17',
+                strokeThickness: Math.max(1, Math.round(2.5 * s / kc)),
+            }).setOrigin(0, 0);
+            f.numFit = Math.min(1, (w - 2 * miniInset) / f.num.width, (h - 2 * miniInset) / f.num.height);
+            f.num.setScale(Math.max(0.05, f.numFit));
+            numBox.add(f.num);
+            fields[lvl] = f;
+        });
+        sx.restore();
+        soilCv.refresh();                              // every field's rows are in
+
+        box.add(marks);
+        box.add(numBox);
+        // THE CARD'S EDGE, over everything and right on the soil's own edge.
+        const edge = this.add.graphics();
+        edge.lineStyle(Math.max(1, (MI.BORDER !== undefined ? MI.BORDER : 2) * s) / kc,
+            hexColor(MI.BORDER_COLOR || '#7a5232'), 1)
+            .strokeRoundedRect(area.x, area.y, area.w, area.h, rad);
+        box.add(edge);
+
+        return {
+            box, batch,
+            // A FIELD THINNED TO `frac` harvested: the next plants in its order
+            // erased from its painting, then one upload. Only ever forward.
+            setProgress: (lvl, frac) => {
+                const f = fields[lvl];
+                if (!f || !f.cv || !f.order.length) return;
+                const want = Math.min(f.order.length, Math.floor(Math.max(0, Math.min(1, frac)) * f.order.length));
+                if (want <= f.cleared) return;
+                const c = f.ctx;
+                c.save();
+                c.setTransform(f.res, 0, 0, f.res, 0, 0);
+                c.globalCompositeOperation = 'destination-out';
+                for (let j = f.cleared; j < want; j++) {
+                    const q = f.plants[f.order[j]];
+                    c.beginPath();
+                    c.arc(q.x - f.x, q.y - f.y, q.d * 0.55, 0, Math.PI * 2);
+                    c.fill();
+                }
+                c.restore();
+                f.cleared = want;
+                f.cv.refresh();
+            },
+            mark: (lvl) => {
+                const f = fields[lvl];
+                if (!f) return;
+                this.tweens.killTweensOf(f.mark);
+                f.mark.setAlpha(1);
+            },
+            unmark: (lvl, ms) => {
+                const f = fields[lvl];
+                if (!f) return;
+                this.tweens.killTweensOf(f.mark);
+                this.tweens.add({ targets: f.mark, alpha: 0, duration: ms });
+            },
+            // THE LEVEL BEING PLAYED leads: its number full strength, every
+            // other one muted and a little smaller.
+            setCurrent: (lvl) => {
+                for (const f of Object.values(fields)) {
+                    const on = f.lvl === lvl;
+                    f.num.setAlpha(on ? 1 : (MI.NUMBER_MUTED !== undefined ? MI.NUMBER_MUTED : 0.45))
+                         .setScale(Math.max(0.05, f.numFit)
+                             * (on ? 1 : (MI.NUMBER_MUTED_SCALE !== undefined ? MI.NUMBER_MUTED_SCALE : 0.8)));
+                }
+            },
+        };
+    }
+
+    // SQUARIFIED TREEMAP of `values` in a w×h box. Returns one rect per value,
+    // in the order given; laid out largest first, rows added to while they
+    // keep the fields closest to square.
+    _squarify(values, w, h) {
+        const total = values.reduce((a, v) => a + v, 0) || 1;
+        const items = values.map((v, i) => ({ v: v * (w * h) / total, i }))
+                            .sort((a, b) => b.v - a.v);
+        const out = [];
+        let x = 0, y = 0;
+        const worst = (row, len) => {
+            const sum = row.reduce((a, r) => a + r.v, 0);
+            const mx = Math.max(...row.map((r) => r.v)), mn = Math.min(...row.map((r) => r.v));
+            return Math.max(len * len * mx / (sum * sum), (sum * sum) / (len * len * mn));
+        };
+        const place = (row) => {
+            const sum = row.reduce((a, r) => a + r.v, 0);
+            if (w >= h) {
+                const cw = sum / h; let yy = y;
+                for (const r of row) { const rh = r.v / cw; out[r.i] = { x, y: yy, w: cw, h: rh }; yy += rh; }
+                x += cw; w -= cw;
+            } else {
+                const rh = sum / w; let xx = x;
+                for (const r of row) { const rw = r.v / rh; out[r.i] = { x: xx, y, w: rw, h: rh }; xx += rw; }
+                y += rh; h -= rh;
+            }
+        };
+        let row = [];
+        while (items.length) {
+            const len = Math.min(w, h);
+            const next = items[0];
+            if (!row.length || worst(row.concat(next), len) <= worst(row, len)) { row.push(next); items.shift(); }
+            else { place(row); row = []; }
+        }
+        if (row.length) place(row);
+        return out;
+    }
+
+    // A crop's display name — FARM_INFO.NAMES where the file name is not
+    // right, the file name title-cased otherwise.
+    _cropTitle(name) {
+        const F = CONFIG.FARM_INFO || {};
+        return (F.NAMES || {})[name]
+            || String(name).split(/[-_ ]+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
     }
 
     // Take the finished field away, then call `done`. Unpairs the slots first,

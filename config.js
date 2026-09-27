@@ -118,7 +118,7 @@ var CONFIG = {
         BATCH:    4,        // icons per tick, so ~4.5 per second at the default
     },
 
-    BATTERY_START_LEVEL: 1,
+    BATTERY_START_LEVEL:1,
     // THE ECONOMY — on the same 2.5× scale as the crop and piggy tables (see
     // THE ECONOMY'S RULES in cropData.js).
     ECONOMY: {
@@ -672,6 +672,107 @@ var CONFIG = {
     // added up, over PER_HECTARE — roughly how many of that crop one hectare
     // grows for real (yield in t/ha over the weight of one). Under 1 ha it is
     // shown in m² (1 ha = 10,000 m²), otherwise in whole hectares.
+    // ── THE FIELD MAP ───────────────────────────────────────────────────────
+    // A small card top right of the farm half, under the banks: five levels to
+    // a map (1–5, 6–10, …), each a field sized by the SQUARE ROOT of its crop
+    // total. Finished fields are bare, the level being played is framed and
+    // thins out as its crop is harvested, the ones to come stand full; after
+    // the fifth the card becomes the next batch's. A representation, kept
+    // cheap: a few painted images, updated a few times a second at most.
+    // See _buildFieldMap.
+    FIELD_MAP: {
+        ENABLED:    true,
+        PAD:        24,        // px @ design: the layout's margin in the half
+        GAP:        8,         // the plain strip between fields — no furrows
+                               // or plants — on the one shared brown ground
+        RADIUS:     10,        // field corners
+        ROW_SPACING: 16,       // crop rows and furrows, px @ design
+        DOT_RADIUS: 6.4,       // 12.8 across on a 16 spacing — the most it
+                               // can be without neighbours touching
+        // Every field is ploughed brown; a field still to harvest has rows of
+        // green plants in its furrows, and the harvest clears them.
+        FIELD_COLOR:      '#b48c64',   // muted: a soft soil the crop stands out on
+        FURROW_WIDTH:     4.5,         // a raised row's width — heavy, px @
+                                       // design: the miniature shrinks it to
+                                       // about a quarter
+        // HAND-HEAPED, NOT RULED: each row runs near straight, thickens and
+        // thins a little, some are split in two, and each is shaded as a
+        // raised mound; the soil is flecked with clods. All painted once.
+        FURROW_WOBBLE:    0.02,        // how far a row strays, × ROW_SPACING —
+                                       // near straight; 0 for ruled
+        FURROW_SPLIT_CHANCE: 0.3,      // share of rows broken in two, once
+        FURROW_SPLIT_GAP: 0.35,        // half that break's length, × ROW_SPACING
+        // RAISED ROWS, lit from the top left: a shadow on the far side, a body
+        // a shade lighter than the soil, a highlight along the crest.
+        RIDGE_SHADOW:     'rgba(70,45,25,0.42)',
+        RIDGE_BODY:       '#c7a077',
+        RIDGE_LIGHT:      'rgba(248,226,188,0.75)',
+        CLOD_DENSITY:     0.6,         // flecks per ROW_SPACING² of ground
+        CLOD_DARK:        'rgba(90,60,35,0.28)',
+        CLOD_LIGHT:       'rgba(235,205,160,0.30)',
+        DOT_COLOR:        '#2f6b1c',   // the crop standing in the furrows —
+        PLANT_LIGHT:      '#4f8f2c',   // …a leafy tuft, with a lighter leaf on top
+        PLANT_VARIANTS:   6,           // how many different tufts are drawn
+        PLANT_SIZE:       1.25,        // a tuft's size, × DOT_RADIUS × 2 (each
+                                       // plant then ±18% of that)
+        PLANT_JITTER:     0.14,        // how far off its spot, × ROW_SPACING
+        // THE CROP ON EACH PLANT: 1–3 small fruits in the crop's colour among
+        // the leaves, so a field says what grows there.
+        FRUIT_SIZE:       0.22,        // a fruit's radius, × half a tuft
+        CROP_COLORS: {
+            'tomato':        '#e0453a',
+            'corn':          '#f2c43d',
+            'egg-plant':     '#7b4a9e',
+            'melon':         '#c6e27a',
+            'potato':        '#d8b27a',
+            'bell-pepper':   '#ff7a2e',
+            'onion':         '#b8628f',
+            'pumpkin':       '#f08a24',
+            'strawberry':    '#e8364f',
+            'sunflower':     '#ffd21a',
+            'banana':        '#f5e04a',
+            'chilly-pepper': '#c9261f',
+            'pineapple':     '#f2c230',
+            'broccoli':      '#3f7a2e',
+            'cabbage':       '#b9d98c',
+            'lettuce':       '#8fd46a',
+        },
+        DEFAULT_CROP_COLOR: null,      // a crop not listed: leaves only
+        MARK_COLOR:       '#fff6e0',   // the frame on the field being played /
+        MARK_EDGE:        '#3b2a17',   // just done / next: light, on a dark edge
+        MARK_WIDTH:       5,           // px @ design — thick enough to show in
+                                       // the miniature too
+        // THE CARD.
+        MINI: {
+            WIDTH_FRAC: 0.24,  // the card's width, × the farm half's width —
+                               // less if that would reach the plants
+            PAD:        24,    // px @ design, from the half's right edge
+            GAP:        10,    // px @ design, under the banks (and above the plants)
+            BORDER:     2,     // the card's edge, px @ design
+            BORDER_COLOR: '#7a5232',
+            DEPTH:      1,     // under the flying produce
+            UPDATE_MS:  300,   // the harvest shown at most this often — picks
+                               // between share one repaint
+            BAKE_SCALE: 1.25,  // paintings made at the card's own size × this.
+                               // The game draws at a fixed stage size, so 1 is
+                               // already pixel for pixel; a little over keeps
+                               // edges smooth. Memory grows with its square.
+            // Each field's level number, top left inside it — the corner's
+            // only words. The level being played at full strength, the others
+            // muted and a little smaller.
+            NUMBER_SIZE:  20,  // px @ design, as it shows in the corner
+            NUMBER_INSET: 3,   // px @ design, in from the field's top left
+            NUMBER_COLOR: '#fff6e0',
+            NUMBER_STROKE: '#3b2a17',
+            NUMBER_MUTED: 0.45,        // the others' alpha…
+            NUMBER_MUTED_SCALE: 0.8,   // …and size
+        },
+        // Timing, ms.
+        MARK_HANDOFF_MS: 220,  // the frame leaving the finished field, before
+                               // it appears on the next
+        SWAP_MS:    380,       // after the fifth: to the next batch's card
+    },
+
     FARM_INFO: {
         ENABLED:   true,
         LEFT_PAD:  28,          // px @ design scale, from the half's left edge
@@ -1070,11 +1171,14 @@ var CONFIG = {
             FILE:        'stump',
             SHADOW_FRAC: 0.5,
             KEEP:        0.2,
-            KEEP_W:      0.2,   // …and only this middle share of its width
+            KEEP_W:      0.1,   // …and only this middle share of its width —
+                                // 5% either side of the centre
             // A SLANTED CUT, not a flat one: the top at this many degrees off
             // level, across the kept width (KEEP stays its middle). Which side
             // is high is picked per plant. 0 for flat.
-            SLANT_DEG:   30,
+            SLANT_DEG:   30,    // the steepest cut…
+            SLANT_MIN_DEG: 10,  // …and the shallowest: each plant picks its
+                                // own angle between the two
         },
 
         // TINT AND ALPHA TOGETHER. Alpha alone lets the ground through and reads
