@@ -675,8 +675,8 @@ var CONFIG = {
     // ── THE FIELD MAP ───────────────────────────────────────────────────────
     // A small card top right of the farm half, under the banks: five levels to
     // a map (1–5, 6–10, …), each a field sized by the SQUARE ROOT of its crop
-    // total. Finished fields are bare, the level being played is framed and
-    // thins out as its crop is harvested, the ones to come stand full; after
+    // total. Finished fields are bare, the level being played is clear and
+    // thins out as its crop is harvested, the ones to come stand full, shaded; after
     // the fifth the card becomes the next batch's. A representation, kept
     // cheap: a few painted images, updated a few times a second at most.
     // See _buildFieldMap.
@@ -710,8 +710,8 @@ var CONFIG = {
         CLOD_DENSITY:     0.6,         // flecks per ROW_SPACING² of ground
         CLOD_DARK:        'rgba(90,60,35,0.28)',
         CLOD_LIGHT:       'rgba(235,205,160,0.30)',
-        DOT_COLOR:        '#2f6b1c',   // the crop standing in the furrows —
-        PLANT_LIGHT:      '#4f8f2c',   // …a leafy tuft, with a lighter leaf on top
+        DOT_COLOR:        '#2f9a1c',   // the crop standing in the furrows —
+        PLANT_LIGHT:      '#7fd63a',   // …a leafy tuft, with a lighter leaf on top
         PLANT_VARIANTS:   6,           // how many different tufts are drawn
         PLANT_SIZE:       1.6,         // a tuft's size, × DOT_RADIUS × 2 (each
                                        // plant then ±18% of that) — big enough
@@ -723,28 +723,24 @@ var CONFIG = {
         // the leaves, so a field says what grows there.
         FRUIT_SIZE:       0.22,        // a fruit's radius, × half a tuft
         CROP_COLORS: {
-            'tomato':        '#e0453a',
-            'corn':          '#f2c43d',
-            'egg-plant':     '#7b4a9e',
-            'melon':         '#c6e27a',
-            'potato':        '#d8b27a',
-            'bell-pepper':   '#ff7a2e',
-            'onion':         '#b8628f',
-            'pumpkin':       '#f08a24',
-            'strawberry':    '#e8364f',
-            'sunflower':     '#ffd21a',
-            'banana':        '#f5e04a',
-            'chilly-pepper': '#c9261f',
-            'pineapple':     '#f2c230',
-            'broccoli':      '#3f7a2e',
-            'cabbage':       '#b9d98c',
-            'lettuce':       '#8fd46a',
+            'tomato':        '#ff3a2e',
+            'corn':          '#ffd31a',
+            'egg-plant':     '#9a3fe0',
+            'melon':         '#c8ff4a',
+            'potato':        '#f0bf6a',
+            'bell-pepper':   '#ff6a10',
+            'onion':         '#e0409a',
+            'pumpkin':       '#ff8a10',
+            'strawberry':    '#ff2448',
+            'sunflower':     '#ffe000',
+            'banana':        '#fff23a',
+            'chilly-pepper': '#f01a10',
+            'pineapple':     '#ffc21a',
+            'broccoli':      '#1f5f8a',
+            'cabbage':       '#d8ff9a',
+            'lettuce':       '#aaff66',
         },
         DEFAULT_CROP_COLOR: null,      // a crop not listed: leaves only
-        MARK_COLOR:       '#fff6e0',   // the frame on the field being played /
-        MARK_EDGE:        '#3b2a17',   // just done / next: light, on a dark edge
-        MARK_WIDTH:       5,           // px @ design — thick enough to show in
-                                       // the miniature too
         // THE CARD.
         MINI: {
             WIDTH_FRAC: 0.24,  // the card's width, × the farm half's width —
@@ -770,10 +766,13 @@ var CONFIG = {
             NUMBER_STROKE: '#3b2a17',
             NUMBER_MUTED: 0.45,        // the others' alpha…
             NUMBER_MUTED_SCALE: 0.8,   // …and size
+            // ONE DARK SHADE over all the fields still to come, as a single
+            // shape — the strips between them included. Not over the field
+            // being played, nor the finished ones.
+            VEIL_ALPHA: 0.55,
+            VEIL_COLOR: '#1e1810',
         },
         // Timing, ms.
-        MARK_HANDOFF_MS: 220,  // the frame leaving the finished field, before
-                               // it appears on the next
         SWAP_MS:    380,       // after the fifth: to the next batch's card
     },
 

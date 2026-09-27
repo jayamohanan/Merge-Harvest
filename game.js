@@ -2951,8 +2951,8 @@ class GameScene extends Phaser.Scene {
     // 6–10 the next, and so on — five fields, each one level, sized by the
     // SQUARE ROOT of that level's crop total, so level 1 is still a field
     // beside level 5. Finished fields are bare soil; the level being played is
-    // framed and thins out AS ITS CROP IS HARVESTED; the ones to come stand
-    // full. After the fifth the card becomes the next batch's.
+    // clear and thins out AS ITS CROP IS HARVESTED; the ones to come stand
+    // full under one dark shade. After the fifth the card becomes the next batch's.
     //
     // A REPRESENTATION, BUILT FOR COST: the soil is one painted image and each
     // field's crop another, so the whole card is a handful of objects. The
@@ -2960,7 +2960,7 @@ class GameScene extends Phaser.Scene {
     // time — no sprites, no tweens — batched to MINI.UPDATE_MS. See
     // CONFIG.FIELD_MAP.
 
-    // A LEVEL IS OVER: its field cleared, the frame handed on to the next, and
+    // A LEVEL IS OVER: its field cleared, the shade lifted off the next, and
     // after the fifth the next batch's card. Nothing waits on it — the level
     // turn carries straight on.
     _advanceFieldMap(finished) {
@@ -2971,30 +2971,19 @@ class GameScene extends Phaser.Scene {
         const batchOf = (lvl) => Math.floor((lvl - 1) / 5);
         const last = CROP_VALUES.length;
         map.setProgress(finished, 1);
-        const handMs = M.MARK_HANDOFF_MS !== undefined ? M.MARK_HANDOFF_MS : 220;
         const next = finished + 1;
-        if (next > last) { map.unmark(finished, handMs); return; }
-        if (batchOf(next) === map.batch) {
-            // THE FRAME MOVES ON IN TWO STEPS: off the finished field first,
-            // and only once it has gone, onto the next.
-            map.unmark(finished, handMs);
-            this.time.delayedCall(handMs, () => {
-                if (!map.box.scene) return;
-                map.mark(next);
-                map.setCurrent(next);
-            });
-            return;
-        }
+        if (next > last) return;
+        // Mid-batch: the shade lifts off the next field and its number leads.
+        if (batchOf(next) === map.batch) { map.setCurrent(next); return; }
         // THE LAST OF FIVE: the finished card fades as the next batch's comes up.
         const swapMs = M.SWAP_MS !== undefined ? M.SWAP_MS : 380;
         const fresh = this._buildFieldMap(batchOf(next), next);
-        fresh.mark(next);
         fresh.setCurrent(next);
         fresh.box.setAlpha(0);
         this.fieldMini = fresh;
-        this.tweens.add({ targets: map.box, alpha: 0, duration: swapMs, delay: handMs,
+        this.tweens.add({ targets: map.box, alpha: 0, duration: swapMs,
             onComplete: () => { if (map.box.scene) map.box.destroy(); } });
-        this.tweens.add({ targets: fresh.box, alpha: 1, duration: swapMs, delay: handMs });
+        this.tweens.add({ targets: fresh.box, alpha: 1, duration: swapMs });
     }
 
     // THE CURRENT FIELD KEEPS UP WITH THE HARVEST — the share of this level's
@@ -3054,13 +3043,13 @@ class GameScene extends Phaser.Scene {
             for (let k = 0; k < leaves; k++) {
                 const ang = a0 + (k / leaves) * Math.PI * 2 + (rnd(10 + k) - 0.5) * 0.9;
                 leaf(ang, c * (0.62 + 0.36 * rnd(20 + k)), c * (0.2 + 0.12 * rnd(30 + k)),
-                     M.DOT_COLOR || '#2f6b1c');
+                     M.DOT_COLOR || '#2f9a1c');
             }
             // A lighter leaf or two on top, catching the light.
             const lights = 1 + Math.floor(rnd(3) * 2);
             for (let k = 0; k < lights; k++) {
                 leaf(a0 + rnd(40 + k) * Math.PI * 2, c * (0.45 + 0.25 * rnd(50 + k)), c * 0.17,
-                     M.PLANT_LIGHT || '#4f8f2c');
+                     M.PLANT_LIGHT || '#7fd63a');
             }
             // The fruit, over the leaves: a small round each, with a speck of
             // light on it so it reads as fruit and not as a hole in the leaves.
@@ -3091,7 +3080,6 @@ class GameScene extends Phaser.Scene {
         const lvl = this.cropLevel;
         if (M.ENABLED === false || !(lvl <= CROP_VALUES.length)) return;
         const map = this._buildFieldMap(Math.floor((lvl - 1) / 5), lvl);
-        map.mark(lvl);
         map.setCurrent(lvl);
         this.fieldMini = map;
     }
@@ -3165,7 +3153,6 @@ class GameScene extends Phaser.Scene {
         const fs   = (M.ROW_SPACING !== undefined ? M.ROW_SPACING : 16) * s;
         const dotR = (M.DOT_RADIUS !== undefined ? M.DOT_RADIUS : 3.2) * s;
         const fields = {};
-        const marks = [];
         // Each card's paintings are its own, named by this build, and go when
         // the card does — a frame after, once nothing draws with them.
         const uid = this._fieldMapUid = (this._fieldMapUid || 0) + 1;
@@ -3266,7 +3253,7 @@ class GameScene extends Phaser.Scene {
             const r = rects[i];
             const x = r.x + gap / 2, y = r.y + gap / 2, w = Math.max(4, r.w - gap), h = Math.max(4, r.h - gap);
             const name = this._cropForLevel(lvl);
-            const f = { lvl, cv: null, ctx: null, x, y, res, plants: [], order: [], cleared: 0 };
+            const f = { lvl, cv: null, ctx: null, x, y, res, plants: [], order: [], cleared: 0, cell: r };
             const done = lvl < doneBelow;
 
             // The rows run along the field's long side; fields are told apart
@@ -3314,9 +3301,9 @@ class GameScene extends Phaser.Scene {
                     const cw = Math.max(1, Math.ceil(w * res)), ch = Math.max(1, Math.ceil(h * res));
                     f.cv = this.textures.createCanvas(key, cw, ch);
                     f.ctx = f.cv.getContext();
-                    f.ctx.setTransform(res, 0, 0, res, 0, 0);
                     for (const q of f.plants) {
                         f.ctx.save();
+                        f.ctx.setTransform(res, 0, 0, res, 0, 0);
                         f.ctx.translate(q.x - x, q.y - y);
                         f.ctx.rotate(q.rot);
                         f.ctx.drawImage(this.textures.get(q.key).getSourceImage(), -q.d / 2, -q.d / 2, q.d, q.d);
@@ -3338,17 +3325,6 @@ class GameScene extends Phaser.Scene {
                 }
             }
 
-            // THE FRAME on the level being played — dark under light, so it
-            // holds on both the sand and the soil.
-            f.mark = this.add.graphics();
-            const mw = Math.max(2, (M.MARK_WIDTH !== undefined ? M.MARK_WIDTH : 5) * s);
-            f.mark.lineStyle(mw * 1.9, hexColor(M.MARK_EDGE || '#3b2a17'), 1)
-                .strokeRoundedRect(x - 2 * s, y - 2 * s, w + 4 * s, h + 4 * s, rad + 2 * s);
-            f.mark.lineStyle(mw, hexColor(M.MARK_COLOR || '#fff6e0'), 1)
-                .strokeRoundedRect(x - 2 * s, y - 2 * s, w + 4 * s, h + 4 * s, rad + 2 * s);
-            f.mark.setAlpha(0);
-            marks.push(f.mark);
-
             // THE LEVEL NUMBER, top left inside the field: sized for the card
             // (MINI.NUMBER_SIZE there), so drawn big here by how much the card
             // shrinks it, and fitted inside the field.
@@ -3367,7 +3343,45 @@ class GameScene extends Phaser.Scene {
         sx.restore();
         soilCv.refresh();                              // every field's rows are in
 
-        box.add(marks);
+        // THE FIELDS STILL TO COME, UNDER ONE DARK SHADE: a single shape over
+        // all of them together — the strips between them included, the map's
+        // rounded corners kept — so what is ahead reads as one region not yet
+        // reached. One painted image, repainted when the level moves on.
+        const veilKey = `field_veil_${uid}`;
+        const veilCv = this.textures.createCanvas(veilKey,
+            Math.max(1, Math.ceil(area.w * res)), Math.max(1, Math.ceil(area.h * res)));
+        texKeys.push(veilKey);
+        const veil = this.add.image(area.x, area.y, veilKey).setOrigin(0, 0)
+            .setDisplaySize(veilCv.width / res, veilCv.height / res)
+            .setAlpha(MI.VEIL_ALPHA !== undefined ? MI.VEIL_ALPHA : 0.55);
+        const paintVeil = (current) => {
+            const c = veilCv.getContext();
+            c.setTransform(1, 0, 0, 1, 0, 0);
+            c.clearRect(0, 0, veilCv.width, veilCv.height);
+            c.save();
+            c.scale(res, res);
+            c.translate(-area.x, -area.y);
+            const R = Math.min(rad, area.w / 2, area.h / 2);
+            c.beginPath();
+            c.moveTo(area.x + R, area.y);
+            c.arcTo(area.x + area.w, area.y, area.x + area.w, area.y + area.h, R);
+            c.arcTo(area.x + area.w, area.y + area.h, area.x, area.y + area.h, R);
+            c.arcTo(area.x, area.y + area.h, area.x, area.y, R);
+            c.arcTo(area.x, area.y, area.x + area.w, area.y, R);
+            c.closePath();
+            c.clip();
+            c.fillStyle = MI.VEIL_COLOR || '#1e1810';
+            // Each field's WHOLE cell, gap and all — neighbours meet, and the
+            // shade is one shape. A hair over, so no seam shows between them.
+            for (const f of Object.values(fields)) {
+                if (f.lvl <= current) continue;
+                const q = f.cell;
+                c.fillRect(q.x - 0.5, q.y - 0.5, q.w + 1, q.h + 1);
+            }
+            c.restore();
+            veilCv.refresh();
+        };
+        box.add(veil);                                 // over the crop, under the numbers
         box.add(numBox);
         // THE CARD'S EDGE, over everything and right on the soil's own edge.
         const edge = this.add.graphics();
@@ -3399,21 +3413,10 @@ class GameScene extends Phaser.Scene {
                 f.cleared = want;
                 f.cv.refresh();
             },
-            mark: (lvl) => {
-                const f = fields[lvl];
-                if (!f) return;
-                this.tweens.killTweensOf(f.mark);
-                f.mark.setAlpha(1);
-            },
-            unmark: (lvl, ms) => {
-                const f = fields[lvl];
-                if (!f) return;
-                this.tweens.killTweensOf(f.mark);
-                this.tweens.add({ targets: f.mark, alpha: 0, duration: ms });
-            },
             // THE LEVEL BEING PLAYED leads: its number full strength, every
             // other one muted and a little smaller.
             setCurrent: (lvl) => {
+                paintVeil(lvl);
                 for (const f of Object.values(fields)) {
                     const on = f.lvl === lvl;
                     f.num.setAlpha(on ? 1 : (MI.NUMBER_MUTED !== undefined ? MI.NUMBER_MUTED : 0.45))
