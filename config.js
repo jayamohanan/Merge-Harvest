@@ -763,6 +763,10 @@ var CONFIG = {
             'carrot':        '#FC7B12',
         },
         DEFAULT_CROP_COLOR: null,      // a crop not listed: leaves only
+        // THE CROP ICONS shown in a field as it unlocks: <ICON_DIR><crop>-icon.webp,
+        // or the file named here where it differs from the crop's name.
+        ICON_DIR:   'graphics/crop/icon/',
+        ICON_FILES: { 'chilly-pepper': 'chilly' },
         // THE CARD: the crops' whole plot, between levels.
         MINI: {
             PAD:        24,    // px @ design, in from the half's left and right
@@ -808,6 +812,13 @@ var CONFIG = {
             // of pale dust bursts up out of it.
             UNLOCK: {
                 MS:         380,
+                // …then the crop's icon pops up in the middle of the field,
+                // and only after it has does the card go.
+                ICON:       true,
+                ICON_MS:    320,
+                ICON_SIZE:  56,    // px @ design, as it shows on the card
+                ICON_FRAC:  0.6,   // never past this share of the field
+                NAME_SIZE:  16,    // the crop's name over it, px @ design on the card
                 PUFF:       true,
                 PUFF_COUNT: 14,
                 PUFF_SIZE:  0.32,  // one cloud, × the field's shorter side

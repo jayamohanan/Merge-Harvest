@@ -2976,7 +2976,9 @@ class GameScene extends Phaser.Scene {
         const unlockMs = (MI.UNLOCK || {}).MS !== undefined ? MI.UNLOCK.MS : 380;
         // Once the unlock has played, HOLD_MS to read it, then the card goes —
         // and only then does the next level grow in, into the space it left.
-        const hide = (card) => later(unlockMs + hold, () =>
+        const U = MI.UNLOCK || {};
+        const iconMs = U.ICON !== false ? (U.ICON_MS !== undefined ? U.ICON_MS : 320) : 0;
+        const hide = (card) => later(unlockMs + iconMs + hold, () =>
             this.tweens.add({ targets: card.box, alpha: 0, duration: outMs,
                 onComplete: () => { if (card.box.scene) card.box.setVisible(false); turn(); done(); } }));
 
@@ -3056,6 +3058,17 @@ class GameScene extends Phaser.Scene {
         return keys;
     }
 
+    // A crop's icon: its texture key, and a fetch of its file if it is not in
+    // hand. FIELD_MAP.ICON_FILES names any whose file is not <crop>-icon.webp.
+    _cropIconKey(name) { return `crop_icon_${name}`; }
+    _ensureCropIcon(name) {
+        const M = CONFIG.FIELD_MAP || {};
+        if (!name) return Promise.resolve();
+        const file = (M.ICON_FILES || {})[name] || name;
+        return this.assets.ensureImage(this._cropIconKey(name),
+            `${M.ICON_DIR || 'graphics/crop/icon/'}${file}-icon.webp`);
+    }
+
     // A soft round cloud, white fading to nothing at its edge — tinted where
     // it is used. Made once.
     _puffTexture() {
@@ -3084,6 +3097,7 @@ class GameScene extends Phaser.Scene {
         if (M.ENABLED === false || !(lvl <= CROP_VALUES.length)) return;
         const map = this._buildFieldMap(Math.floor((lvl - 1) / 5), lvl);
         map.setCurrent(lvl);
+        map.showIcon(lvl, false);                     // the field being played wears its crop
         map.box.setVisible(false);                    // hidden through play
         this.fieldMini = map;
     }
@@ -3121,6 +3135,9 @@ class GameScene extends Phaser.Scene {
         const first = batch * 5 + 1;
         const levels = [];
         for (let l = first; l < first + 5 && l <= CROP_VALUES.length; l++) levels.push(l);
+        // This card's crop icons, fetched now — while the level is played —
+        // so each is in hand by the time its field unlocks.
+        for (const l of levels) this._ensureCropIcon(this._cropForLevel(l));
 
         // The layout's own space: the half less its margin, as wide as ever but
         // only as tall as the card's shape allows — so the fields fill a card
@@ -3410,6 +3427,13 @@ class GameScene extends Phaser.Scene {
             harvestAll: (lvl) => {
                 const f = fields[lvl];
                 if (!f || !f.cv || !f.order.length || f.cleared) return;
+                // The field's crop icon goes up and away as the harvest starts.
+                for (const ic of [f.icon, f.iconName]) {
+                    if (!ic || !ic.scene) continue;
+                    this.tweens.add({ targets: ic, y: ic.y - ic.displayHeight * 0.4, alpha: 0,
+                        duration: 260, ease: 'Quad.easeIn', onComplete: () => ic.destroy() });
+                }
+                f.icon = f.iconName = null;
                 const sweep = MI.SWEEP_MS !== undefined ? MI.SWEEP_MS : 600;
                 const lift  = MI.LIFT_MS  !== undefined ? MI.LIFT_MS  : 240;
                 const fade  = MI.FADE_MS  !== undefined ? MI.FADE_MS  : 140;
@@ -3433,6 +3457,59 @@ class GameScene extends Phaser.Scene {
                 f.cv.refresh();
                 f.cleared = n;
             },
+            // THE CROP'S ICON in the middle of its field — the produce on its
+            // own (graphics/crop/icon/<crop>-icon.webp). Sized for the card
+            // (MINI.UNLOCK.ICON_SIZE on screen), never past ICON_FRAC of the
+            // field, its own shape kept. `pop` swells it in; otherwise it is
+            // simply there. Put up as soon as its file is in, if it was not.
+            showIcon: (lvl, pop) => {
+                const f = fields[lvl];
+                if (!f || f.icon) return;
+                const U = MI.UNLOCK || {};
+                const name = this._cropForLevel(lvl);
+                const key = this._cropIconKey(name);
+                if (!this.textures.exists(key)) {
+                    this._ensureCropIcon(name).then(() => {
+                        if (box.scene && this.textures.exists(key)) api.showIcon(lvl, false);
+                    });
+                    return;
+                }
+                const q = f.cell;
+                const src = this.textures.get(key).get();
+                const most = Math.min((U.ICON_SIZE !== undefined ? U.ICON_SIZE : 56) * s / kc,
+                                      Math.min(q.w, q.h) * (U.ICON_FRAC !== undefined ? U.ICON_FRAC : 0.6));
+                const k = most / Math.max(src.width, src.height);
+                const iw = src.width * k, ih = src.height * k;
+                // THE CROP'S NAME OVER IT, in the card's number style — the
+                // pair centred in the field together, and both shrunk if the
+                // field is too small to hold them.
+                const nm = this.add.text(0, 0, this._cropTitle(name), {
+                    fontSize: Math.round((U.NAME_SIZE !== undefined ? U.NAME_SIZE : 16) * s / kc) + 'px',
+                    fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
+                    color: MI.NUMBER_COLOR || '#fff6e0', stroke: MI.NUMBER_STROKE || '#3b2a17',
+                    strokeThickness: Math.max(1, Math.round(2.5 * s / kc)),
+                }).setOrigin(0.5, 1);
+                const gap = 3 * s / kc;
+                const fit = Math.min(1, (q.w * 0.9) / Math.max(iw, nm.width),
+                                        (q.h * 0.9) / (nm.height + gap + ih));
+                const groupH = (nm.height + gap + ih) * fit;
+                const cx = q.x + q.w / 2, top = q.y + (q.h - groupH) / 2;
+                const ic = this.add.image(cx, top + (nm.height + gap) * fit + ih * fit / 2, key)
+                    .setDisplaySize(iw * fit, ih * fit);
+                nm.setPosition(cx, top + nm.height * fit).setScale(fit);
+                box.addAt(ic, box.getIndex(numBox));
+                box.addAt(nm, box.getIndex(numBox));
+                f.icon = ic;
+                f.iconName = nm;
+                if (!pop) return;
+                const ms = U.ICON_MS !== undefined ? U.ICON_MS : 320;
+                const sx = ic.scaleX, sy = ic.scaleY;
+                ic.setScale(0);
+                this.tweens.add({ targets: ic, scaleX: sx, scaleY: sy, duration: ms, ease: 'Back.easeOut' });
+                nm.setAlpha(0).setScale(fit * 0.6);
+                this.tweens.add({ targets: nm, alpha: 1, scale: fit, duration: ms, ease: 'Back.easeOut',
+                    delay: ms * 0.3 });
+            },
             // A FIELD UNLOCKED: the shade over it lifts — faded off, not
             // snapped — and a puff of dust bursts up out of it, as if
             // something had just opened. The number takes the lead with it.
@@ -3449,6 +3526,8 @@ class GameScene extends Phaser.Scene {
                 api.setCurrent(lvl);                   // the real shade gone under the lid
                 this.tweens.add({ targets: lid, alpha: 0, duration: ms, ease: 'Quad.easeOut',
                     onComplete: () => lid.destroy() });
+                // …and once it is clear, the crop it now grows pops up in it.
+                if (U.ICON !== false) this.time.delayedCall(ms, () => { if (box.scene) api.showIcon(lvl, true); });
                 if (U.PUFF === false) return;
                 // THE PUFF: soft pale clouds from across the field, drifting
                 // out and swelling as they fade. Sized off the field, so a
