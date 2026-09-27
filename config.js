@@ -749,6 +749,7 @@ var CONFIG = {
         MINI: {
             WIDTH_FRAC: 0.24,  // the card's width, × the farm half's width —
                                // less if that would reach the plants
+            PORTRAIT_SCALE: 1.25,  // …and this much bigger again in portrait
             PAD:        24,    // px @ design, from the half's right edge
             GAP:        10,    // px @ design, under the banks (and above the plants)
             BORDER:     2,     // the card's edge, px @ design

@@ -3107,7 +3107,8 @@ class GameScene extends Phaser.Scene {
         const top = (this.pigRow ? this.pigRow.bottom : B.y) + gap;
         const floor = this.farmInfoAt ? this.farmInfoAt.bottom - gap : B.y + B.height * 0.4;
         if (!(aspect > 0)) aspect = B.height / B.width;
-        let w = B.width * (MI.WIDTH_FRAC !== undefined ? MI.WIDTH_FRAC : 0.24);
+        let w = B.width * (MI.WIDTH_FRAC !== undefined ? MI.WIDTH_FRAC : 0.24)
+              * (this.isPortrait ? (MI.PORTRAIT_SCALE !== undefined ? MI.PORTRAIT_SCALE : 1.25) : 1);
         let h = w * aspect;
         if (h > floor - top) { h = Math.max(20 * s, floor - top); w = h / aspect; }
         const x = B.x + B.width - (MI.PAD !== undefined ? MI.PAD : 24) * s - w;
