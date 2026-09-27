@@ -3109,8 +3109,12 @@ class GameScene extends Phaser.Scene {
         if (!(aspect > 0)) aspect = B.height / B.width;
         let w = B.width * (MI.WIDTH_FRAC !== undefined ? MI.WIDTH_FRAC : 0.24)
               * (this.isPortrait ? (MI.PORTRAIT_SCALE !== undefined ? MI.PORTRAIT_SCALE : 1.25) : 1);
-        let h = w * aspect;
-        if (h > floor - top) { h = Math.max(20 * s, floor - top); w = h / aspect; }
+        // THE WIDTH HOLDS; only the height gives way to the room there is. A
+        // card that shrank whole to fit would lose the size it was given on a
+        // tall phone, where the room under the banks is what runs out first —
+        // instead it goes a little wider for its height, and the fields are
+        // laid out to that shape (see _buildFieldMap).
+        let h = Math.min(w * aspect, Math.max(20 * s, floor - top));
         const x = B.x + B.width - (MI.PAD !== undefined ? MI.PAD : 24) * s - w;
         return { x, y: top, w, h };
     }
@@ -3130,9 +3134,13 @@ class GameScene extends Phaser.Scene {
         const levels = [];
         for (let l = first; l < first + 5 && l <= CROP_VALUES.length; l++) levels.push(l);
 
+        // The layout's own space: the half less its margin, as wide as ever but
+        // only as tall as the card's shape allows — so the fields fill a card
+        // that had to come out shorter, instead of being squashed into it.
         const pad  = (M.PAD !== undefined ? M.PAD : 24) * s;
-        const area = { x: B.x + pad, y: B.y + pad, w: B.width - 2 * pad, h: B.height - 2 * pad };
-        const card = this._fieldMiniRect(area.h / area.w);
+        const aw   = B.width - 2 * pad;
+        const card = this._fieldMiniRect((B.height - 2 * pad) / aw);
+        const area = { x: B.x + pad, y: B.y + pad, w: aw, h: aw * card.h / card.w };
         const kc   = card.w / area.w || 1;
         box.setPosition(card.x - area.x * kc, card.y - area.y * kc).setScale(kc);
         // What the paintings are made at, against the half's own pixels.
