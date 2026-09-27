@@ -583,7 +583,6 @@ class GameScene extends Phaser.Scene {
         this._makeFieldMini();
         (this.crops || []).forEach((c, i) => this._restoreCrop(c, kept[i]));
         this._setFarmHarvested();
-        this._fieldMapProgress(true);
 
         // The merge half.
         this.createGrid();
@@ -1233,15 +1232,6 @@ class GameScene extends Phaser.Scene {
     // same place. Both frames are full height, so the fruit lands where it hangs
     // without a single offset to tune — and a plant with nothing ripe yet is the
     // same picture with the second sprite left off.
-    // IS THIS CROP A ROOT CROP — one whose produce grows UNDER the plant?
-    //
-    // It changes exactly one thing, and only about layering: where the produce
-    // sits in the stack while it is on the plant. See CROPS.ROOT.
-    _isRoot(name) {
-        const list = (CONFIG.CROPS || {}).ROOT || [];
-        return list.indexOf(name) >= 0;
-    }
-
     // ── THE FARM'S NAME AND SIZE ─────────────────────────────────────────────
     // "1. Tomato Farm", the harvest counter, and the land it would take to grow
     // this level's harvest for real: the three plants' figures added up, over
@@ -1523,7 +1513,7 @@ class GameScene extends Phaser.Scene {
     _plantDepth(k, layer) {
         const D = (CONFIG.CROPS || {}).DEPTH || {};
         const B = D.BAND || {};
-        const inBand = { SHADOW: 0, ROOT_FRUIT: 0.02, PLANT: 0.05, FRUIT: 0.08 };
+        const inBand = { SHADOW: 0, PLANT: 0.05, FRUIT: 0.08 };
         const max  = Math.max(1, D.ROW_MAX || 10);
         const back = (max - 1) - Math.max(0, Math.min(max - 1, k || 0));   // front = max - 1
         return (D.ROW_BASE !== undefined ? D.ROW_BASE : 3.5)
@@ -1626,9 +1616,7 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // The depth stack these three plots are drawn in — one place, because
-        // which of the plant and its produce is in front is the whole of what a
-        // root crop changes.
+        // The depth stack these three plots are drawn in — one place.
         const D = Object.assign({ PICKED: 6, LABEL: 8 }, C.DEPTH || {});
 
         // WHAT EACH PLANT HOLDS, top to bottom. The plot's position IS which
@@ -1770,9 +1758,6 @@ class GameScene extends Phaser.Scene {
                 // same way it is — a mirrored plant with an unmirrored fruit
                 // would hang its produce off the wrong side of itself.
                 flip,
-                // A ROOT CROP's produce grows under the plant rather than on it,
-                // so it rests BEHIND — see _newFruit.
-                root: this._isRoot(name),
             };
             // The first fruit is there from the start — no swell, nothing grew,
             // the plant simply has one.
@@ -1786,7 +1771,7 @@ class GameScene extends Phaser.Scene {
                 const p = plants[k];
                 p.fruit = this.add.image(p.cx, p.baseY, `crop_${name}`, 1)
                     .setOrigin(0.5, 1).setDisplaySize(p.w, p.h).setFlipX(p.flip)
-                    .setDepth(this._plantDepth(k, crop.root ? 'ROOT_FRUIT' : 'FRUIT'))
+                    .setDepth(this._plantDepth(k, 'FRUIT'))
                     .setAlpha(p.plant.alpha);
             }
 
@@ -1894,7 +1879,6 @@ class GameScene extends Phaser.Scene {
         // fruit coming off the plant beside it; a label that jumps as well makes
         // two announcements of one event and neither is read.
         this._setFarmHarvested();
-        this._fieldMapProgress();
 
         const last = crop.left <= 0;
         // EVERY PLANT THIS TICK CLEARS GIVES UP ITS FRUIT, not just the one
@@ -2017,13 +2001,8 @@ class GameScene extends Phaser.Scene {
         if (H.ENABLED === false || !fr || !fr.scene) return false;
         crop.fruit = null;
 
-        // IT COMES TO THE FRONT AS IT IS PULLED. For a root crop this is the
-        // moment the produce stops being part of the plant and becomes a thing
-        // that has been lifted OUT of it — it has to pass in front of the
-        // foliage it was behind, or it reads as sliding up through the plant.
-        // A crop whose fruit already hangs in front is put on the same layer, so
-        // one rule covers both and a picked fruit is always the nearest thing
-        // its plant has.
+        // IT COMES TO THE FRONT AS IT IS PULLED: a picked fruit is always the
+        // nearest thing its plant has, over its own foliage and every plant's.
         const D = (CONFIG.CROPS || {}).DEPTH || {};
         fr.setDepth(D.PICKED !== undefined ? D.PICKED : 6);
 
@@ -2157,12 +2136,8 @@ class GameScene extends Phaser.Scene {
     _newFruit(crop, grown, onDone) {
         const C = CONFIG.CROPS || {}, H = C.PICK || {};
         if (crop.done || !crop.plant || !crop.plant.scene) return null;
-        // BEHIND THE PLANT FOR A ROOT CROP. A potato or an onion grows UNDER
-        // the ground and the leaves come up out of it, so the produce drawn over
-        // the foliage would read as sitting on top of the plant rather than as
-        // the thing the plant is growing from. Behind it, the foliage overlaps
-        // the tuber and the two read as one plant rooted in the soil.
-        const rest = this._plantDepth(crop.active || 0, crop.root ? 'ROOT_FRUIT' : 'FRUIT');
+        // OVER THE PLANT, for every crop — the produce is what the player picks.
+        const rest = this._plantDepth(crop.active || 0, 'FRUIT');
         // TURNED THE SAME WAY THE PLANT IS. Both frames are drawn over exactly
         // the same rectangle, so the flip that mirrors the plant has to mirror
         // its fruit too — otherwise a mirrored plant grows its produce on the
@@ -2376,7 +2351,7 @@ class GameScene extends Phaser.Scene {
             const at = instant ? 0 : (k - from) * chain;
             if (!instant) this.time.delayedCall(at, () => this._leafBurst(p.cx, p.baseY - p.h / 2, p.h));
             if (this._stumpOn()) {
-                this._toStump(crop, p, at);
+                this._toStump(crop, p, at, !instant);
                 continue;
             }
             // No stump art: the old pop — a swell and a fade.
@@ -2461,9 +2436,12 @@ class GameScene extends Phaser.Scene {
     // in the plant's own depth band, over a much smaller shadow. `delay` holds
     // it for its place in a chain of pops. A chain outlived by its plot — the
     // level turned over, or the field was re-laid-out — does nothing.
-    _toStump(crop, p, delay) {
+    _toStump(crop, p, delay, reward) {
         const swap = () => {
             if (!this.crops || this.crops[crop.row] !== crop) return;
+            // A PLANT DONE IS PAID FOR — a puff, a figure and a few coins —
+            // but only when it is done NOW, never when a rebuild restores it.
+            if (reward) this._plantDoneReward(crop, p);
             const ST  = (CONFIG.CROPS || {}).STUMP || {};
             // CUT DOWN TO ITS OWN BASE (STUMP.KEEP): the plant stays, cropped
             // to its bottom KEEP — still on its foot, since it stands from its
@@ -2647,7 +2625,7 @@ class GameScene extends Phaser.Scene {
         // Without the stump art, it is greyed out instead, as below.
         const cur = crop.plants && crop.plants[crop.active || 0];
         if (cur && this._stumpOn()) {
-            this._toStump(crop, cur, 0);
+            this._toStump(crop, cur, 0, true);
             return;
         }
 
@@ -2944,11 +2922,11 @@ class GameScene extends Phaser.Scene {
         // A beat to see the field standing finished before it is cleared.
         this.time.delayedCall(N.DELAY_MS !== undefined ? N.DELAY_MS : 700, () => {
             this._clearCrops(() => {
-                // The field map's card moves on with it — see _advanceFieldMap.
-                this._advanceFieldMap(this.cropLevel);
-                this.cropLevel++;
-                this.buildCrops(undefined, true);
-                this._levelTurning = false;
+                // The field map shows the level done and unlocks the next — see
+                // _advanceFieldMap — and the next level grows in once it has gone.
+                this._advanceFieldMap(this.cropLevel,
+                    () => { this.cropLevel++; this.buildCrops(undefined, true); },
+                    () => { this._levelTurning = false; });
             });
         });
     }
@@ -2959,58 +2937,73 @@ class GameScene extends Phaser.Scene {
     // 6–10 the next, and so on — five fields, each one level, sized by the
     // SQUARE ROOT of that level's crop total, so level 1 is still a field
     // beside level 5. Finished fields are bare soil; the level being played is
-    // clear and thins out AS ITS CROP IS HARVESTED; the ones to come stand
-    // full under one dark shade. After the fifth the card becomes the next batch's.
+    // clear, and harvested — swept from one end — when its level is over;
+    // the ones to come stand full under one dark shade. After the fifth the
+    // card becomes the next batch's.
     //
     // A REPRESENTATION, BUILT FOR COST: the soil is one painted image and each
     // field's crop another, so the whole card is a handful of objects. The
-    // harvest shows by ERASING plants from the field's painting a few at a
-    // time — no sprites, no tweens — batched to MINI.UPDATE_MS. See
-    // CONFIG.FIELD_MAP.
+    // field's plants only become separate images for the second or so of its
+    // sweep at the level's end. See CONFIG.FIELD_MAP.
 
-    // A LEVEL IS OVER: its field cleared, the shade lifted off the next, and
-    // after the fifth the next batch's card. Nothing waits on it — the level
-    // turn carries straight on.
-    _advanceFieldMap(finished) {
+    // A LEVEL IS OVER — THE ONLY TIME THE CARD IS SEEN. It is hidden all
+    // through play (so a long row of plants can never run under it), and
+    // comes up once the finished field has been cleared: the field is swept
+    // from one end, the shade lifts off the next field and its number leads,
+    // a beat to read it, and it goes again. After the fifth, the next batch's
+    // card takes its place before it goes. `done` then lets the level turn
+    // carry on, so the new plants grow in with the card already away.
+    //
+    // IT STANDS WHERE THE CROPS DO, so the two are never up together: the
+    // finished plants are cleared first, and `turn` — the next level growing
+    // in — only runs once the card has gone. Then `done`.
+    _advanceFieldMap(finished, turn, done) {
         const M  = CONFIG.FIELD_MAP || {};
         const MI = M.MINI || {};
         const map = this.fieldMini;
-        if (M.ENABLED === false || !map || !map.box.scene) return;
+        if (M.ENABLED === false || !map || !map.box.scene) { turn(); done(); return; }
         const batchOf = (lvl) => Math.floor((lvl - 1) / 5);
-        const last = CROP_VALUES.length;
-        map.setProgress(finished, 1);
-        const next = finished + 1;
-        if (next > last) return;
-        // Mid-batch: the shade lifts off the next field and its number leads.
-        if (batchOf(next) === map.batch) { map.setCurrent(next); return; }
-        // THE LAST OF FIVE: the finished card fades as the next batch's comes up.
+        const last  = CROP_VALUES.length;
+        const next  = finished + 1;
+        const inMs  = MI.IN_MS   !== undefined ? MI.IN_MS   : 200;
+        const outMs = MI.OUT_MS  !== undefined ? MI.OUT_MS  : 260;
+        const hold  = MI.HOLD_MS !== undefined ? MI.HOLD_MS : 600;
         const swapMs = M.SWAP_MS !== undefined ? M.SWAP_MS : 380;
-        const fresh = this._buildFieldMap(batchOf(next), next);
-        fresh.setCurrent(next);
-        fresh.box.setAlpha(0);
-        this.fieldMini = fresh;
-        this.tweens.add({ targets: map.box, alpha: 0, duration: swapMs,
-            onComplete: () => { if (map.box.scene) map.box.destroy(); } });
-        this.tweens.add({ targets: fresh.box, alpha: 1, duration: swapMs });
-    }
+        const sweep = (MI.SWEEP_MS !== undefined ? MI.SWEEP_MS : 600)
+                    + (MI.LIFT_MS  !== undefined ? MI.LIFT_MS  : 240)
+                    + (MI.FADE_MS  !== undefined ? MI.FADE_MS  : 140);
+        const later = (ms, fn) => this.time.delayedCall(ms, fn);
+        const unlockMs = (MI.UNLOCK || {}).MS !== undefined ? MI.UNLOCK.MS : 380;
+        // Once the unlock has played, HOLD_MS to read it, then the card goes —
+        // and only then does the next level grow in, into the space it left.
+        const hide = (card) => later(unlockMs + hold, () =>
+            this.tweens.add({ targets: card.box, alpha: 0, duration: outMs,
+                onComplete: () => { if (card.box.scene) card.box.setVisible(false); turn(); done(); } }));
 
-    // THE CURRENT FIELD KEEPS UP WITH THE HARVEST — the share of this level's
-    // crop picked so far, taken off the field's painting. Called on every
-    // pick, but only ever applied once per MINI.UPDATE_MS: picks landing
-    // between share one repaint. `now` for a rebuild, which cannot wait.
-    _fieldMapProgress(now) {
-        const MI = (CONFIG.FIELD_MAP || {}).MINI || {};
-        const apply = (still) => {
-            this._fieldMapPend = null;
-            const map = this.fieldMini;
-            if (!map || !map.box.scene || !this.crops) return;
-            let got = 0, all = 0;
-            for (const c of this.crops) { all += c.total || 0; got += Math.max(0, (c.total || 0) - (c.left || 0)); }
-            if (all > 0) map.setProgress(this.cropLevel, got / all, still === true);
-        };
-        if (now) { if (this._fieldMapPend) { this._fieldMapPend.remove(false); } apply(true); return; }
-        if (this._fieldMapPend) return;
-        this._fieldMapPend = this.time.delayedCall(MI.UPDATE_MS !== undefined ? MI.UPDATE_MS : 300, apply);
+        this.tweens.killTweensOf(map.box);
+        map.box.setVisible(true).setAlpha(0);
+        this.tweens.add({ targets: map.box, alpha: 1, duration: inMs });
+        later(inMs, () => map.harvestAll(finished));
+        if (next > last) { later(inMs + sweep, () => hide(map)); return; }
+        // Mid-batch: the shade lifts off the next field and its number leads.
+        if (batchOf(next) === map.batch) {
+            later(inMs + sweep, () => { if (map.box.scene) map.unlock(next); hide(map); });
+            return;
+        }
+        // THE LAST OF FIVE: once its field is swept, the card gives way to the
+        // next batch's, which is read for a beat and then goes.
+        later(inMs + sweep, () => {
+            // The new card comes up with ALL its fields shaded, and its first
+            // is then unlocked, the same as any other.
+            const fresh = this._buildFieldMap(batchOf(next), next);
+            fresh.setCurrent(next - 1);
+            fresh.box.setVisible(true).setAlpha(0);
+            this.fieldMini = fresh;
+            this.tweens.add({ targets: map.box, alpha: 0, duration: swapMs,
+                onComplete: () => { if (map.box.scene) map.box.destroy(); } });
+            this.tweens.add({ targets: fresh.box, alpha: 1, duration: swapMs });
+            later(swapMs, () => { if (fresh.box.scene) fresh.unlock(next); hide(fresh); });
+        });
     }
 
     // THE FIELD MAP'S PLANTS: BLOCKS, NOT LEAVES. Each is a green square (or
@@ -3063,6 +3056,24 @@ class GameScene extends Phaser.Scene {
         return keys;
     }
 
+    // A soft round cloud, white fading to nothing at its edge — tinted where
+    // it is used. Made once.
+    _puffTexture() {
+        const key = 'fx_puff';
+        if (this.textures.exists(key)) return key;
+        const px = 64;
+        const cv = this.textures.createCanvas(key, px, px);
+        const ctx = cv.getContext();
+        const g = ctx.createRadialGradient(px / 2, px / 2, 0, px / 2, px / 2, px / 2);
+        g.addColorStop(0, 'rgba(255,255,255,1)');
+        g.addColorStop(0.55, 'rgba(255,255,255,0.55)');
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, px, px);
+        cv.refresh();
+        return key;
+    }
+
     // The card, put up for the level being played — called whenever the farm
     // half is laid out. None past the last level.
     _makeFieldMini() {
@@ -3073,30 +3084,27 @@ class GameScene extends Phaser.Scene {
         if (M.ENABLED === false || !(lvl <= CROP_VALUES.length)) return;
         const map = this._buildFieldMap(Math.floor((lvl - 1) / 5), lvl);
         map.setCurrent(lvl);
+        map.box.setVisible(false);                    // hidden through play
         this.fieldMini = map;
     }
 
-    // WHERE THE CARD STANDS: top right of the farm half, just under the banks,
-    // WIDTH_FRAC of the half's width — or less, if that would reach down into
-    // the plants. `aspect` is the card's own height over width.
-    _fieldMiniRect(aspect) {
+    // WHERE THE CARD STANDS: IN THE CROPS' OWN PLACE. It is only ever up
+    // between levels, with the field cleared, so it takes the whole plot —
+    // the half's width less PAD, from just under the farm info down to just
+    // over the slots. `aspect` is unused: the fields are laid out to this.
+    _fieldMiniRect() {
         const MI = (CONFIG.FIELD_MAP || {}).MINI || {};
         const B  = this.layoutConfig.partB;
         const s  = this.layoutConfig.scale;
         const gap = (MI.GAP !== undefined ? MI.GAP : 10) * s;
-        const top = (this.pigRow ? this.pigRow.bottom : B.y) + gap;
-        const floor = this.farmInfoAt ? this.farmInfoAt.bottom - gap : B.y + B.height * 0.4;
-        if (!(aspect > 0)) aspect = B.height / B.width;
-        let w = B.width * (MI.WIDTH_FRAC !== undefined ? MI.WIDTH_FRAC : 0.5)
-              * (this.isPortrait ? (MI.PORTRAIT_SCALE !== undefined ? MI.PORTRAIT_SCALE : 1) : 1);
-        // THE WIDTH HOLDS; only the height gives way to the room there is. A
-        // card that shrank whole to fit would lose the size it was given on a
-        // tall phone, where the room under the banks is what runs out first —
-        // instead it goes a little wider for its height, and the fields are
-        // laid out to that shape (see _buildFieldMap).
-        let h = Math.min(w * aspect, Math.max(20 * s, floor - top));
-        const x = B.x + B.width - (MI.PAD !== undefined ? MI.PAD : 24) * s - w;
-        return { x, y: top, w, h };
+        const pad = (MI.PAD !== undefined ? MI.PAD : 24) * s;
+        const fi  = this.farmInfo && this.farmInfo.scene ? this.farmInfo : null;
+        const top = fi ? fi.y + fi.blockH * fi.scaleY + gap
+                       : (this.farmInfoAt ? this.farmInfoAt.top : B.y) + gap;
+        const p0  = (this.platforms || [])[0];
+        const floor = p0 && p0.slotY !== undefined ? p0.slotY - p0.slotSize / 2 - gap : B.y + B.height - gap;
+        const h = Math.max(20 * s, floor - top);
+        return { x: B.x + pad, y: top, w: B.width - 2 * pad, h };
     }
 
     // ONE BATCH'S CARD. Laid out in the farm half's own coordinates — the
@@ -3109,7 +3117,7 @@ class GameScene extends Phaser.Scene {
         const MI = M.MINI || {};
         const B  = this.layoutConfig.partB;
         const s  = this.layoutConfig.scale;
-        const box = this.add.container(0, 0).setDepth(MI.DEPTH !== undefined ? MI.DEPTH : 1);
+        const box = this.add.container(0, 0).setDepth(MI.DEPTH !== undefined ? MI.DEPTH : 9);
         const first = batch * 5 + 1;
         const levels = [];
         for (let l = first; l < first + 5 && l <= CROP_VALUES.length; l++) levels.push(l);
@@ -3119,7 +3127,7 @@ class GameScene extends Phaser.Scene {
         // that had to come out shorter, instead of being squashed into it.
         const pad  = (M.PAD !== undefined ? M.PAD : 24) * s;
         const aw   = B.width - 2 * pad;
-        const card = this._fieldMiniRect((B.height - 2 * pad) / aw);
+        const card = this._fieldMiniRect();
         const area = { x: B.x + pad, y: B.y + pad, w: aw, h: aw * card.h / card.w };
         const kc   = card.w / area.w || 1;
         box.setPosition(card.x - area.x * kc, card.y - area.y * kc).setScale(kc);
@@ -3382,58 +3390,87 @@ class GameScene extends Phaser.Scene {
         };
         box.add(veil);                                 // over the crop, under the numbers
         box.add(numBox);
-        // THE CARD'S EDGE, over everything and right on the soil's own edge.
-        const edge = this.add.graphics();
-        edge.lineStyle(Math.max(1, (MI.BORDER !== undefined ? MI.BORDER : 2) * s) / kc,
-            hexColor(MI.BORDER_COLOR || '#7a5232'), 1)
-            .strokeRoundedRect(area.x, area.y, area.w, area.h, Math.max(0.01, cardRad));
-        box.add(edge);
+        // THE CARD'S EDGE, over everything and right on the soil's own edge —
+        // only if MINI.BORDER asks for one; 0, the soil simply ends.
+        if (MI.BORDER > 0) {
+            const edge = this.add.graphics();
+            edge.lineStyle(Math.max(1, MI.BORDER * s) / kc, hexColor(MI.BORDER_COLOR || '#7a5232'), 1)
+                .strokeRoundedRect(area.x, area.y, area.w, area.h, Math.max(0.01, cardRad));
+            box.add(edge);
+        }
 
-        return {
+        const api = {
             box, batch,
-            // A FIELD THINNED TO `frac` harvested: the next plants in its order
-            // erased from its painting, then one upload. Only ever forward.
-            //
-            // AND THE ONES TAKEN RISE: each plant erased is put back up for a
-            // moment as its own image, lifted a little and faded out, so a
-            // harvest reads as the crop coming up off the field. Only a few go
-            // per update (MINI.LIFT_MAX) — the rest of a big jump, and every
-            // plant on a rebuild (`still`), just go.
-            setProgress: (lvl, frac, still) => {
+            // THE FIELD HARVESTED, once, when its level is over: a front
+            // crossing it from one end (f.order), each plant rising a little
+            // at full strength and then fading where it stopped. Every plant
+            // is put up as its own image for the moment it takes and the
+            // painting cleared underneath at once — so until the front
+            // reaches a plant it simply stands there, as it did.
+            harvestAll: (lvl) => {
                 const f = fields[lvl];
-                if (!f || !f.cv || !f.order.length) return;
-                const want = Math.min(f.order.length, Math.floor(Math.max(0, Math.min(1, frac)) * f.order.length));
-                if (want <= f.cleared) return;
-                if (!still) {
-                    const max = MI.LIFT_MAX !== undefined ? MI.LIFT_MAX : 16;
-                    const at = box.getIndex(veil);
-                    for (let j = f.cleared, n = 0; j < want && n < max; j++, n++) {
-                        const q = f.plants[f.order[j]];
-                        const img = this.add.image(q.x, q.y, q.key).setDisplaySize(q.d, q.d).setRotation(q.rot);
-                        box.addAt(img, at);
-                        this.tweens.add({ targets: img,
-                            y: q.y - q.d * (MI.LIFT !== undefined ? MI.LIFT : 0.35), alpha: 0,
-                            duration: MI.LIFT_MS !== undefined ? MI.LIFT_MS : 380,
-                            delay: n * (MI.LIFT_STAGGER !== undefined ? MI.LIFT_STAGGER : 25),
-                            ease: 'Quad.easeOut', onComplete: () => img.destroy() });
-                    }
-                }
-                const c = f.ctx;
-                c.save();
-                c.setTransform(f.res, 0, 0, f.res, 0, 0);
-                c.globalCompositeOperation = 'destination-out';
-                // Each block's own square, turned as it stands, a hair over.
-                for (let j = f.cleared; j < want; j++) {
-                    const q = f.plants[f.order[j]];
-                    c.save();
-                    c.translate(q.x - f.x, q.y - f.y);
-                    c.rotate(q.rot);
-                    c.fillRect(-q.d * 0.52, -q.d * 0.52, q.d * 1.04, q.d * 1.04);
-                    c.restore();
-                }
-                c.restore();
-                f.cleared = want;
+                if (!f || !f.cv || !f.order.length || f.cleared) return;
+                const sweep = MI.SWEEP_MS !== undefined ? MI.SWEEP_MS : 600;
+                const lift  = MI.LIFT_MS  !== undefined ? MI.LIFT_MS  : 240;
+                const fade  = MI.FADE_MS  !== undefined ? MI.FADE_MS  : 140;
+                const at = box.getIndex(veil);
+                const n = f.order.length;
+                f.order.forEach((j, i) => {
+                    const q = f.plants[j];
+                    const img = this.add.image(q.x, q.y, q.key).setDisplaySize(q.d, q.d).setRotation(q.rot);
+                    box.addAt(img, at);
+                    this.tweens.add({ targets: img,
+                        y: q.y - q.d * (MI.LIFT !== undefined ? MI.LIFT : 0.35),
+                        duration: lift, delay: sweep * (i / n), ease: 'Quad.easeOut',
+                        onComplete: () => {
+                            if (!img.scene) return;
+                            this.tweens.add({ targets: img, alpha: 0, duration: fade,
+                                onComplete: () => img.destroy() });
+                        } });
+                });
+                f.ctx.setTransform(1, 0, 0, 1, 0, 0);
+                f.ctx.clearRect(0, 0, f.cv.width, f.cv.height);
                 f.cv.refresh();
+                f.cleared = n;
+            },
+            // A FIELD UNLOCKED: the shade over it lifts — faded off, not
+            // snapped — and a puff of dust bursts up out of it, as if
+            // something had just opened. The number takes the lead with it.
+            unlock: (lvl) => {
+                const f = fields[lvl];
+                if (!f) return;
+                const U = MI.UNLOCK || {};
+                const ms = U.MS !== undefined ? U.MS : 380;
+                const q = f.cell;
+                const lid = this.add.graphics();
+                lid.fillStyle(hexColor(MI.VEIL_COLOR || '#1e1810'), 1).fillRect(q.x, q.y, q.w, q.h);
+                lid.setAlpha(veil.alpha);
+                box.addAt(lid, box.getIndex(veil) + 1);
+                api.setCurrent(lvl);                   // the real shade gone under the lid
+                this.tweens.add({ targets: lid, alpha: 0, duration: ms, ease: 'Quad.easeOut',
+                    onComplete: () => lid.destroy() });
+                if (U.PUFF === false) return;
+                // THE PUFF: soft pale clouds from across the field, drifting
+                // out and swelling as they fade. Sized off the field, so a
+                // small field gets a small puff. In the card's own space, so
+                // it shrinks with the card.
+                const size = Math.min(q.w, q.h);
+                const sc = size * (U.PUFF_SIZE !== undefined ? U.PUFF_SIZE : 0.32) / 64;
+                const life = U.PUFF_MS !== undefined ? U.PUFF_MS : 650;
+                const puff = this.add.particles(0, 0, this._puffTexture(), {
+                    lifespan: { min: life * 0.7, max: life },
+                    speed: { min: size * 0.25, max: size * 0.7 },
+                    angle: { min: 0, max: 360 },
+                    scale: { start: sc * 0.5, end: sc * 1.4 },
+                    alpha: { start: 0.8, end: 0 },
+                    rotate: { min: 0, max: 360 },
+                    tint: U.PUFF_TINT || [0xfff6e0, 0xefe4cf, 0xdccdb3],
+                    emitZone: { type: 'random', source: new Phaser.Geom.Rectangle(q.x + q.w * 0.15, q.y + q.h * 0.15, q.w * 0.7, q.h * 0.7) },
+                    emitting: false,
+                });
+                box.add(puff);
+                puff.explode(U.PUFF_COUNT !== undefined ? U.PUFF_COUNT : 14);
+                this.time.delayedCall(life + 100, () => { if (puff.scene) puff.destroy(); });
             },
             // THE LEVEL BEING PLAYED leads: its number full strength, every
             // other one muted and a little smaller.
@@ -3447,6 +3484,7 @@ class GameScene extends Phaser.Scene {
                 }
             },
         };
+        return api;
     }
 
     // SQUARIFIED TREEMAP of `values` in a w×h box. Returns one rect per value,
@@ -5163,6 +5201,77 @@ class GameScene extends Phaser.Scene {
                 });
             });
         });
+    }
+
+    // ── A plant finished ─────────────────────────────────────────────────────
+    // A small, positive beat each time a plant is picked clean and stands as a
+    // stump: a puff of dust at its foot, "+N" rising off it, and a few coins
+    // flying to the counter — N paid when the last one lands. N is
+    // PLANT_REWARD.BASE for levels 1–5, twice that for 6–10, three times for
+    // 11–15, and so on (a step every STEP levels). Deliberately small beside
+    // a bank's burst: this is the tick, the bank is the payout.
+    _plantDoneReward(crop, p) {
+        const R = CONFIG.PLANT_REWARD || {};
+        if (R.ENABLED === false) return;
+        const s   = this.layoutConfig.scale;
+        const lvl = crop.level || this.cropLevel || 1;
+        const step = Math.max(1, R.STEP || 5);
+        const amount = (R.BASE !== undefined ? R.BASE : 10) * (Math.floor((lvl - 1) / step) + 1);
+        const x = p.cx, y = p.baseY - (p.h || 0) * 0.35;
+
+        // THE PUFF, one shared emitter fired at the stump's foot.
+        if (R.PUFF !== false) {
+            if (!this.plantPuff || !this.plantPuff.scene) {
+                this.plantPuff = this.add.particles(0, 0, this._puffTexture(), {
+                    lifespan: { min: 380, max: 560 },
+                    speed: { min: 20 * s, max: 70 * s },
+                    angle: { min: 200, max: 340 },         // up and out
+                    scale: { start: 0.18 * s, end: 0.5 * s },
+                    alpha: { start: 0.7, end: 0 },
+                    tint: R.PUFF_TINT || [0xf3e6cc, 0xe2cfaa, 0xcdb58c],
+                    emitting: false,
+                }).setDepth(6.5);
+            }
+            this.plantPuff.emitParticleAt(p.cx, p.baseY - 4 * s, R.PUFF_COUNT !== undefined ? R.PUFF_COUNT : 6);
+        }
+
+        // "+N", in the coin counter's own gold, rising and fading.
+        const CC = CONFIG.COIN_COUNTER || {};
+        const fs = Math.max(12, Math.round((R.TEXT_SIZE !== undefined ? R.TEXT_SIZE : 26) * s));
+        const txt = this.add.text(x, y, `+${this._bigNum(amount)}`, {
+            fontSize: fs + 'px', fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
+            color: CC.TEXT_COLOR || '#f7ca42', stroke: CC.TEXT_STROKE_COLOR || '#7e5d11',
+            strokeThickness: Math.max(2, Math.round(3 * s)),
+        }).setOrigin(0.5).setDepth(8.5);
+        this.tweens.add({ targets: txt, y: y - 40 * s, alpha: { from: 1, to: 0 },
+            duration: R.TEXT_MS !== undefined ? R.TEXT_MS : 800, ease: 'Cubic.easeOut',
+            onComplete: () => txt.destroy() });
+
+        // THE COINS: a few, popped up off the plant and then to the counter.
+        if (!this.coinIcon || !this.coinIcon.scene) { this.coins += amount; this.updateCoinDisplay(); return; }
+        const n = Math.max(1, R.COINS !== undefined ? R.COINS : 3);
+        const size = (R.COIN_SIZE !== undefined ? R.COIN_SIZE : 30) * s;
+        this._coinFlights = (this._coinFlights || 0) + 1;   // see _isSettled
+        let landed = 0;
+        for (let i = 0; i < n; i++) {
+            const c = this.add.image(x, y, 'coin').setDisplaySize(size, size).setDepth(100);
+            const ox = (Math.random() - 0.5) * 50 * s, oy = -(20 + Math.random() * 30) * s;
+            this.tweens.add({ targets: c, x: x + ox, y: y + oy, duration: 180, ease: 'Quad.easeOut',
+                delay: i * 50,
+                onComplete: () => this.tweens.add({ targets: c,
+                    x: this.coinIcon.x, y: this.coinIcon.y,
+                    displayWidth: size * 0.8, displayHeight: size * 0.8,
+                    duration: R.FLY_MS !== undefined ? R.FLY_MS : 480, ease: 'Cubic.easeIn',
+                    onComplete: () => {
+                        c.destroy();
+                        this._punchCoinCounter(landed === n - 1);
+                        if (++landed === n) {
+                            this.coins += amount;
+                            this.updateCoinDisplay();
+                            this._coinFlights--;
+                        }
+                    } }) });
+        }
     }
 
     // The counter reacting to a coin landing on it: the icon knocks back, and on

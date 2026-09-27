@@ -510,6 +510,25 @@ var CONFIG = {
     // farm pays out, so the coins are drawn big, thrown outward before they fly,
     // and land as a run of blows on the counter. Small coins sliding neatly into
     // a corner are invisible to someone looking elsewhere.
+    // ── A PLANT FINISHED ────────────────────────────────────────────────────
+    // Each plant picked clean — the moment it becomes a stump — pays a little:
+    // a puff of dust at its foot, "+N" rising off it and a few coins to the
+    // counter. N is BASE for levels 1–5, 2× for 6–10, 3× for 11–15, and so on,
+    // one step every STEP levels. See _plantDoneReward.
+    PLANT_REWARD: {
+        ENABLED:    true,
+        BASE:       10,
+        STEP:       5,
+        COINS:      3,        // how many fly to the counter
+        COIN_SIZE:  30,       // px @ design
+        FLY_MS:     480,
+        TEXT_SIZE:  26,       // the "+N", px @ design
+        TEXT_MS:    800,
+        PUFF:       true,
+        PUFF_COUNT: 6,
+        PUFF_TINT:  [0xf3e6cc, 0xe2cfaa, 0xcdb58c],
+    },
+
     COIN_REWARD_ANIMATION: {
         COIN_COUNT: 16,                // a shower, not a trickle
         REWARD_COIN_SIZE: 64,          // px @ design scale; the counter's own
@@ -744,28 +763,30 @@ var CONFIG = {
             'carrot':        '#FC7B12',
         },
         DEFAULT_CROP_COLOR: null,      // a crop not listed: leaves only
-        // THE CARD.
+        // THE CARD: the crops' whole plot, between levels.
         MINI: {
-            WIDTH_FRAC: 0.5,   // the card's width, × the farm half's width —
-                               // pinned to the right, reaching in toward the
-                               // farm info on the left
-            PORTRAIT_SCALE: 1, // …× this in portrait
-            PAD:        24,    // px @ design, from the half's right edge
-            GAP:        10,    // px @ design, under the banks (and above the plants)
-            BORDER:     2,     // the card's edge, px @ design
+            PAD:        24,    // px @ design, in from the half's left and right
+            GAP:        10,    // px @ design, under the farm info and over the slots
+            BORDER:     0,     // the card's edge, px @ design — 0: none
             BORDER_COLOR: '#7a5232',
             CORNER_RADIUS: 0,  // the card's corners, px @ design — 0: sharp
-            DEPTH:      1,     // under the flying produce
-            // A plant harvested rises a little and fades, rather than just
-            // going: LIFT × its size, over LIFT_MS, LIFT_STAGGER apart, at most
-            // LIFT_MAX per update (the rest of a big jump simply go).
+            DEPTH:      9,     // over the farm half's plants and labels while
+                               // it is up — it is only up between levels
+            // THE HARVEST, AT THE LEVEL'S END ONLY: a front sweeps the field
+            // from one end in SWEEP_MS, each plant rising LIFT × its size over
+            // LIFT_MS at full strength, then fading over FADE_MS.
+            SWEEP_MS:    600,
+            // HIDDEN THROUGH PLAY — shown only when a level ends, IN THE CROPS'
+            // PLACE once they are cleared: in over IN_MS, the sweep, the next
+            // field unlocked, HOLD_MS, out over OUT_MS — and then the next
+            // level's plants grow in.
+            IN_MS:       200,
+            HOLD_MS:     600,   // after the unlock, before it goes
+            OUT_MS:      260,
             LIFT:        0.35,
-            LIFT_MS:     380,
-            LIFT_STAGGER: 25,
-            LIFT_MAX:    16,
-            SWEEP_JITTER: 0.04, // the harvest's front: how ragged, × the field's length
-            UPDATE_MS:  300,   // the harvest shown at most this often — picks
-                               // between share one repaint
+            LIFT_MS:     240,
+            FADE_MS:     140,
+            SWEEP_JITTER: 0.04, // the front: how ragged, × the field's length
             BAKE_SCALE: 1.25,  // paintings made at the card's own size × this.
                                // The game draws at a fixed stage size, so 1 is
                                // already pixel for pixel; a little over keeps
@@ -783,6 +804,16 @@ var CONFIG = {
             // shape — the strips between them included. Not over the field
             // being played, nor the finished ones.
             VEIL_ALPHA: 0.35,
+            // THE NEXT FIELD UNLOCKING: its shade fades off over MS and a puff
+            // of pale dust bursts up out of it.
+            UNLOCK: {
+                MS:         380,
+                PUFF:       true,
+                PUFF_COUNT: 14,
+                PUFF_SIZE:  0.32,  // one cloud, × the field's shorter side
+                PUFF_MS:    650,
+                PUFF_TINT:  [0xfff6e0, 0xefe4cf, 0xdccdb3],
+            },
             VEIL_COLOR: '#1e1810',
         },
         // Timing, ms.
@@ -885,15 +916,6 @@ var CONFIG = {
                  'strawberry', 'sunflower',   'banana',    'chilly-pepper',
                  'pineapple',  'broccoli',    'cabbage',   'lettuce'],
 
-        // ── ROOT CROPS ──────────────────────────────────────────────────────
-        // Crops whose produce grows UNDER the plant rather than on it. It
-        // changes one thing and only one: the produce rests BEHIND the foliage
-        // instead of in front, so the leaves overlap the tuber and the two read
-        // as one plant rooted in the soil rather than a potato sitting on a
-        // bush. It comes to the front the instant it is pulled — that is what
-        // being lifted out of the ground looks like (see CROPS.DEPTH).
-        ROOT: ['potato', 'onion'],
-
         // ── WHICH PLOTS ARE MIRRORED ────────────────────────────────────────
         // By plot, left to right: 0, 1, 2. A plot listed here draws its plant
         // — and every fruit that plant grows — flipped left to right.
@@ -915,21 +937,15 @@ var CONFIG = {
         // The count is not a setting: it is however many slots there are.
 
         // ── WHAT IS IN FRONT OF WHAT ────────────────────────────────────────
-        // The farm half's whole stack, in one place, because which of a plant
-        // and its produce is nearer is the entire difference a root crop makes.
+        // The farm half's whole stack, in one place.
         //
-        // (SHADOW, ROOT_FRUIT, PLANT and FRUIT are per plant, inside that
+        // (SHADOW, PLANT and FRUIT are per plant, inside that
         // plant's band — see DEPTH below. The order among them is this one.)
         //
         //   SHADOW      the flat oval cast on the ground beneath the plant.
         //               Drawn separately from the sprite so it never swings
         //               with a shake (see CROPS.SHADOW) — it only ever needs
         //               to sit behind the plant.
-        //   ROOT_FRUIT  a potato or onion at rest: UNDER the foliage but OVER
-        //               the shadow. It used to go under the shadow too, to read
-        //               as buried — but the shadow is solid now (see
-        //               SHADOW.GROUND) and hid the produce outright. Still
-        //               behind its own plant's foliage.
         //   LEAF        the harvest's leaves, BEHIND every plant.
         //               In front they crossed the plant's own face once a
         //               second and read as something thrown AT it; behind, the
@@ -938,12 +954,10 @@ var CONFIG = {
         //               sheds. It stays over the slot square below (drawn at
         //               3), so leaves falling that far are not swallowed by it.
         //   PLANT       the leaves
-        //   FRUIT       an ordinary crop's produce at rest: ON the plant
+        //   FRUIT       every crop's produce at rest: ON the plant
         //   PICKED      any produce while it is being lifted — in front of the
         //               shadow and the foliage either way, because it has left
-        //               the plant. A root crop's tuber is pulled OUT here: this
-        //               is the step where it stops being ROOT_FRUIT (behind the
-        //               foliage) and becomes this (in front of everything).
+        //               the plant.
         //   LABEL       the figure, over everything the plant does. Above
         //               PICKED on purpose: the count is the readout and a fruit
         //               crossing it once a second would take the one number the
@@ -962,7 +976,6 @@ var CONFIG = {
             ROW_MAX:    10,     // the longest row the bands are laid out for
             BAND: {
                 SHADOW:     0,
-                ROOT_FRUIT: 0.02,
                 PLANT:      0.05,
                 FRUIT:      0.08,
             },
