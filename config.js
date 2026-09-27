@@ -713,8 +713,11 @@ var CONFIG = {
         DOT_COLOR:        '#2f6b1c',   // the crop standing in the furrows —
         PLANT_LIGHT:      '#4f8f2c',   // …a leafy tuft, with a lighter leaf on top
         PLANT_VARIANTS:   6,           // how many different tufts are drawn
-        PLANT_SIZE:       1.25,        // a tuft's size, × DOT_RADIUS × 2 (each
-                                       // plant then ±18% of that)
+        PLANT_SIZE:       1.6,         // a tuft's size, × DOT_RADIUS × 2 (each
+                                       // plant then ±18% of that) — big enough
+                                       // that neighbours overlap into a canopy
+        PLANT_SPACING:    0.55,        // plants along a row, × ROW_SPACING —
+                                       // closer than the rows, for a dense crop
         PLANT_JITTER:     0.14,        // how far off its spot, × ROW_SPACING
         // THE CROP ON EACH PLANT: 1–3 small fruits in the crop's colour among
         // the leaves, so a field says what grows there.

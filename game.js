@@ -3291,10 +3291,14 @@ class GameScene extends Phaser.Scene {
                         k: h2,
                     });
                 };
+                // DENSE: plants closer along a row than rows are apart, and
+                // big enough to overlap — a canopy, so what the harvest opens
+                // up is plainly bare soil against standing crop.
+                const ps = fs * (M.PLANT_SPACING !== undefined ? M.PLANT_SPACING : 0.55);
                 rows.forEach((v, k) => {
-                    const off = fs * (k % 2 ? 1 : 0.6);
-                    if (along) for (let xx = x + off; xx < x + w - fs * 0.4; xx += fs) plant(xx, v);
-                    else       for (let yy = y + off; yy < y + h - fs * 0.4; yy += fs) plant(v, yy);
+                    const off = fs * 0.4 + (k % 2 ? ps * 0.5 : 0);
+                    if (along) for (let xx = x + off; xx < x + w - fs * 0.35; xx += ps) plant(xx, v);
+                    else       for (let yy = y + off; yy < y + h - fs * 0.35; yy += ps) plant(v, yy);
                 });
                 if (f.plants.length) {
                     const key = `field_crop_${uid}_${lvl}`;
