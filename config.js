@@ -723,34 +723,37 @@ var CONFIG = {
         // the leaves, so a field says what grows there.
         FRUIT_SIZE:       0.22,        // a fruit's radius, × half a tuft
         CROP_COLORS: {
-            'tomato':        '#ff3a2e',
-            'corn':          '#ffd31a',
-            'egg-plant':     '#9a3fe0',
-            'melon':         '#c8ff4a',
-            'potato':        '#f0bf6a',
-            'bell-pepper':   '#ff6a10',
-            'onion':         '#e0409a',
-            'pumpkin':       '#ff8a10',
+            'tomato':        '#DA3923',
+            'corn':          '#FAD02F',
+            'egg-plant':     '#82309F',
+            'melon':         '#DCB883',
+            'potato':        '#CC8D2A',
+            'bell-pepper':   '#F03F1E',
+            'onion':         '#B55177',
+            'pumpkin':       '#F0861D',
             'strawberry':    '#ff2448',
-            'sunflower':     '#ffe000',
+            'sunflower':     '#F1C63B',
             'banana':        '#fff23a',
-            'chilly-pepper': '#f01a10',
-            'pineapple':     '#ffc21a',
-            'broccoli':      '#1f5f8a',
-            'cabbage':       '#d8ff9a',
-            'lettuce':       '#aaff66',
+            'chilly-pepper': '#C43628',
+            'pineapple':     '#E38C3A',
+            'broccoli':      '#8EB44A',
+            'cabbage':       '#ACD643',
+            'lettuce':       '#CEE53D',
+            'carrot':        '#FC7B12',
         },
         DEFAULT_CROP_COLOR: null,      // a crop not listed: leaves only
         // THE CARD.
         MINI: {
-            WIDTH_FRAC: 0.24,  // the card's width, × the farm half's width —
-                               // less if that would reach the plants
-            PORTRAIT_SCALE: 1.25,  // …and this much bigger again in portrait
+            WIDTH_FRAC: 0.5,   // the card's width, × the farm half's width —
+                               // pinned to the right, reaching in toward the
+                               // farm info on the left
+            PORTRAIT_SCALE: 1, // …× this in portrait
             PAD:        24,    // px @ design, from the half's right edge
             GAP:        10,    // px @ design, under the banks (and above the plants)
             BORDER:     2,     // the card's edge, px @ design
             BORDER_COLOR: '#7a5232',
             DEPTH:      1,     // under the flying produce
+            SWEEP_JITTER: 0.04, // the harvest's front: how ragged, × the field's length
             UPDATE_MS:  300,   // the harvest shown at most this often — picks
                                // between share one repaint
             BAKE_SCALE: 1.25,  // paintings made at the card's own size × this.
@@ -794,6 +797,7 @@ var CONFIG = {
                                     // as n/m: crops picked so far this level
                                     // over the level's three plant figures
                                     // added up
+        SHOW_AREA:   false,         // the area line — off: the field map shows size
         AREA_PREFIX: 'Area: ',  // before the figure, so it reads as a size and
                                 // not a score. '' for the bare figure
         NAME_COLOR: '#6b4c2c',  // mid brown, not the near-black of the figures

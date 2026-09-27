@@ -1406,20 +1406,28 @@ class GameScene extends Phaser.Scene {
         const nT    = this.add.text(xN, y1, '0', cs).setOrigin(1, 0);
         const mT    = this.add.text(xN, y1, '/' + this._bigNum(total), cs);
 
-        const perHa = (F.PER_HECTARE || {})[name] || F.DEFAULT_PER_HECTARE || 100000;
-        const ha    = total / perHa;
-        const m2    = Math.round(ha * 10000);
-        const areaT = this.add.text(0, y1 + pre.height + gap,
-            (F.AREA_PREFIX !== undefined ? F.AREA_PREFIX : 'Area: ') + (m2 < 10000
-                ? `${this._bigNum(Math.max(1, m2))} m²`
-                : `${this._bigNum(Math.max(1, Math.round(ha)))} ha`), cs);
+        // THE AREA LINE, off by default (SHOW_AREA) — the field map now says
+        // how big a farm is.
+        const pieces = [...nameBits, pre, nT, mT];
+        let bottom = pre.y + pre.height;
+        if (F.SHOW_AREA) {
+            const perHa = (F.PER_HECTARE || {})[name] || F.DEFAULT_PER_HECTARE || 100000;
+            const ha    = total / perHa;
+            const m2    = Math.round(ha * 10000);
+            const areaT = this.add.text(0, y1 + pre.height + gap,
+                (F.AREA_PREFIX !== undefined ? F.AREA_PREFIX : 'Area: ') + (m2 < 10000
+                    ? `${this._bigNum(Math.max(1, m2))} m²`
+                    : `${this._bigNum(Math.max(1, Math.round(ha)))} ha`), cs);
+            pieces.push(areaT);
+            bottom = areaT.y + areaT.height;
+        }
 
-        const box = this.add.container(0, 0, [...nameBits, pre, nT, mT, areaT])
+        const box = this.add.container(0, 0, pieces)
             .setDepth(F.DEPTH !== undefined ? F.DEPTH : 8);
         box.level     = lvl;
         box.harvN     = nT;
         box.harvTotal = total;
-        box.blockH    = areaT.y + areaT.height;
+        box.blockH    = bottom;
         return box;
     }
 
@@ -3095,8 +3103,8 @@ class GameScene extends Phaser.Scene {
         const top = (this.pigRow ? this.pigRow.bottom : B.y) + gap;
         const floor = this.farmInfoAt ? this.farmInfoAt.bottom - gap : B.y + B.height * 0.4;
         if (!(aspect > 0)) aspect = B.height / B.width;
-        let w = B.width * (MI.WIDTH_FRAC !== undefined ? MI.WIDTH_FRAC : 0.24)
-              * (this.isPortrait ? (MI.PORTRAIT_SCALE !== undefined ? MI.PORTRAIT_SCALE : 1.25) : 1);
+        let w = B.width * (MI.WIDTH_FRAC !== undefined ? MI.WIDTH_FRAC : 0.5)
+              * (this.isPortrait ? (MI.PORTRAIT_SCALE !== undefined ? MI.PORTRAIT_SCALE : 1) : 1);
         // THE WIDTH HOLDS; only the height gives way to the room there is. A
         // card that shrank whole to fit would lose the size it was given on a
         // tall phone, where the room under the banks is what runs out first —
@@ -3312,16 +3320,19 @@ class GameScene extends Phaser.Scene {
                     f.cv.refresh();
                     texKeys.push(key);
                     box.add(this.add.image(x, y, key).setOrigin(0, 0).setDisplaySize(cw / res, ch / res));
-                    // THE ORDER THE HARVEST TAKES THEM: loosely across the
-                    // field from one corner to the one diagonally opposite —
-                    // which pair set by how the batch is turned — each plant's
-                    // place nudged by its own hash so it never reads as a wipe.
-                    const fx = flipX ? x : x + w, fy = flipY ? y : y + h;
-                    const dx = (flipX ? x + w : x) - fx, dy = (flipY ? y + h : y) - fy;
-                    const l2 = dx * dx + dy * dy || 1;
-                    f.order = f.plants.map((q, j) => ({ j,
-                        t: Math.max(0, Math.min(1, ((q.x - fx) * dx + (q.y - fy) * dy) / l2)) * 0.6 + q.k * 0.4 }))
-                        .sort((a, b) => a.t - b.t).map((o) => o.j);
+                    // THE ORDER THE HARVEST TAKES THEM: FROM ONE END. A clean
+                    // front crosses the field along its rows, from one short
+                    // edge to the other — which edge set by how the batch is
+                    // turned — so the bare ground opens up from one side. Only
+                    // a hair of jitter (MINI.SWEEP_JITTER), so the front is a
+                    // line and not a ruler's edge.
+                    const back = along ? flipX : flipY;          // which end starts
+                    const jit2 = MI.SWEEP_JITTER !== undefined ? MI.SWEEP_JITTER : 0.04;
+                    f.order = f.plants.map((q, j) => {
+                        let u = along ? (q.x - x) / w : (q.y - y) / h;
+                        if (!back) u = 1 - u;
+                        return { j, t: u + (q.k - 0.5) * jit2 };
+                    }).sort((a, b) => a.t - b.t).map((o) => o.j);
                 }
             }
 
