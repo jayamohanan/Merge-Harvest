@@ -4152,36 +4152,6 @@ class GameScene extends Phaser.Scene {
             box.add(edge);
         }
 
-        // HOW BIG A FIELD'S ICON COMES OUT ON ITS OWN — its longer side on
-        // the card, and its name's scale — sized and fitted exactly as
-        // showIcon does it. A crop whose
-        // icon has not arrived is taken as square for now, and not kept.
-        const iconNatural = (f) => {
-            if (f.natIcon !== undefined) return f.natIcon;
-            const U = MI.UNLOCK || {};
-            const name = this._cropForLevel(f.lvl);
-            const key = this._cropIconKey(name);
-            const have = this.textures.exists(key);
-            const src = have ? this.textures.get(key).get() : { width: 1, height: 1 };
-            const q = f.cell;
-            const most = Math.min((U.ICON_SIZE !== undefined ? U.ICON_SIZE : 56) * s / kc,
-                                  Math.min(q.w, q.h) * (U.ICON_FRAC !== undefined ? U.ICON_FRAC : 0.6));
-            const k = most / Math.max(src.width, src.height);
-            const iw = src.width * k, ih = src.height * k;
-            const t = this.add.text(0, 0, this._cropTitle(name), {
-                fontSize: Math.round((U.NAME_SIZE !== undefined ? U.NAME_SIZE : 16) * s / kc) + 'px',
-                fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
-                strokeThickness: Math.max(1, Math.round(2.5 * s / kc)),
-            });
-            const nw = t.width, nh = t.height;
-            t.destroy();
-            const gap = 3 * s / kc;
-            const fit = Math.min(1, (q.w * 0.9) / Math.max(iw, nw), (q.h * 0.9) / (nh + gap + ih));
-            const v = { icon: Math.max(iw, ih) * fit, name: fit };
-            if (have) f.natIcon = v;
-            return v;
-        };
-
         const api = {
             box, batch,
             // THE FIELD HARVESTED, once, when its level is over: a front
@@ -4223,8 +4193,8 @@ class GameScene extends Phaser.Scene {
             },
             // THE CROP'S ICON in the middle of its field — the produce on its
             // own (graphics/crop/icon/<crop>-icon.webp). Sized for the card
-            // (MINI.UNLOCK.ICON_SIZE on screen), never past ICON_FRAC of the
-            // field, its own shape kept. `pop` swells it in; otherwise it is
+            // (MINI.UNLOCK.ICON_SIZE on screen, the same on every field), its
+            // own shape kept. `pop` swells it in; otherwise it is
             // simply there. Put up as soon as its file is in, if it was not.
             showIcon: (lvl, pop, done) => {
                 const f = fields[lvl];
@@ -4256,17 +4226,12 @@ class GameScene extends Phaser.Scene {
                 const gap = 3 * s / kc;
                 const fit = Math.min(1, (q.w * 0.9) / Math.max(iw, nm.width),
                                         (q.h * 0.9) / (nm.height + gap + ih));
-                // ONE SIZE FOR THE WHOLE SECTION: every icon, and every name,
-                // as big as field SIZE_FROM_FIELD's (5: the section's last,
-                // and biggest) would come out on its own — so the five read
-                // as a set. A small field's icon may reach past its edges.
-                // SIZE_FROM_FIELD 0: each field sized for itself.
-                const pos = U.SIZE_FROM_FIELD !== undefined ? U.SIZE_FROM_FIELD : 5;
-                const all = Object.values(fields).sort((a, b) => a.lvl - b.lvl);
-                const ref = pos > 0 ? all[Math.min(pos, all.length) - 1] : null;
-                const rs = ref ? iconNatural(ref) : null;
-                const fi = rs ? rs.icon / Math.max(iw, ih) : fit;
-                const fn = rs ? rs.name : fit;
+                // ONE SIZE FOR EVERY FIELD: every icon ICON_SIZE on the card
+                // (its longer side), every name at its full NAME_SIZE —
+                // however big or small the field, so all of them read as a set.
+                // Centred on the field; a small field's may reach past its edges.
+                const fi = (U.ICON_SIZE !== undefined ? U.ICON_SIZE : 56) * s / kc / Math.max(iw, ih);
+                const fn = 1;
                 const groupH = (nm.height + gap) * fn + ih * fi;
                 const cx = q.x + q.w / 2, top = q.y + (q.h - groupH) / 2;
                 const ic = this.add.image(cx, top + (nm.height + gap) * fn + ih * fi / 2, key)

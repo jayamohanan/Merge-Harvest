@@ -900,14 +900,10 @@ var CONFIG = {
                 // …then the crop's icon appears in the middle of the field, at
                 // its own size, and only after it has swelled does the card go.
                 ICON:       true,
-                ICON_SIZE:  56,    // px @ design, as it shows on the card
-                ICON_FRAC:  0.6,   // never past this share of the field
-                // ONE SIZE FOR A WHOLE SECTION: every icon and name as big as
-                // this field's (1–5 in the section; 5 — its last and biggest)
-                // would come out on its own. A small field's icon reaches past
-                // its edges. 0: each field sized for itself.
-                SIZE_FROM_FIELD: 5,
-                NAME_SIZE:  16,    // the crop's name over it, px @ design on the card
+                ICON_SIZE:  56,    // px @ design, as it shows on the card — every
+                                   // field's the same, whatever its size
+                NAME_SIZE:  21,    // (16 × 1.3) the crop's name over it, px @ design on the card —
+                                   // likewise the same on every field
                 // Shown, the icon (and name) swell and settle once — up to
                 // PULSE_SCALE and back over PULSE_MS — then the card goes.
                 PULSE_SCALE:  1.2,
