@@ -4152,8 +4152,9 @@ class GameScene extends Phaser.Scene {
             box.add(edge);
         }
 
-        // HOW BIG A FIELD'S ICON COMES OUT ON ITS OWN — the longer side, on
-        // the card, sized and fitted exactly as showIcon does it. A crop whose
+        // HOW BIG A FIELD'S ICON COMES OUT ON ITS OWN — its longer side on
+        // the card, and its name's scale — sized and fitted exactly as
+        // showIcon does it. A crop whose
         // icon has not arrived is taken as square for now, and not kept.
         const iconNatural = (f) => {
             if (f.natIcon !== undefined) return f.natIcon;
@@ -4176,7 +4177,7 @@ class GameScene extends Phaser.Scene {
             t.destroy();
             const gap = 3 * s / kc;
             const fit = Math.min(1, (q.w * 0.9) / Math.max(iw, nw), (q.h * 0.9) / (nh + gap + ih));
-            const v = Math.max(iw, ih) * fit;
+            const v = { icon: Math.max(iw, ih) * fit, name: fit };
             if (have) f.natIcon = v;
             return v;
         };
@@ -4255,20 +4256,22 @@ class GameScene extends Phaser.Scene {
                 const gap = 3 * s / kc;
                 const fit = Math.min(1, (q.w * 0.9) / Math.max(iw, nm.width),
                                         (q.h * 0.9) / (nm.height + gap + ih));
-                // NEVER SMALLER THAN THE CARD'S SECOND-SMALLEST ICON (the
-                // ICON_MIN_RANK-th smallest, as each would come out on its
-                // own), nor ICON_MIN — so the one small field's icon is raised
-                // to its neighbour's size, reaching past its edges rather than
-                // shrinking out of sight. Only the icon: the name still fits.
-                const nat = Object.values(fields).map((g) => iconNatural(g)).sort((a, b) => a - b);
-                const rank = Math.max(1, U.ICON_MIN_RANK !== undefined ? U.ICON_MIN_RANK : 2);
-                const minI = Math.max((U.ICON_MIN || 0) * s / kc, nat[Math.min(rank, nat.length) - 1] || 0);
-                const fi = Math.max(fit, minI / Math.max(iw, ih));
-                const groupH = nm.height * fit + gap * fit + ih * fi;
+                // ONE SIZE FOR THE WHOLE SECTION: every icon, and every name,
+                // as big as field SIZE_FROM_FIELD's (5: the section's last,
+                // and biggest) would come out on its own — so the five read
+                // as a set. A small field's icon may reach past its edges.
+                // SIZE_FROM_FIELD 0: each field sized for itself.
+                const pos = U.SIZE_FROM_FIELD !== undefined ? U.SIZE_FROM_FIELD : 5;
+                const all = Object.values(fields).sort((a, b) => a.lvl - b.lvl);
+                const ref = pos > 0 ? all[Math.min(pos, all.length) - 1] : null;
+                const rs = ref ? iconNatural(ref) : null;
+                const fi = rs ? rs.icon / Math.max(iw, ih) : fit;
+                const fn = rs ? rs.name : fit;
+                const groupH = (nm.height + gap) * fn + ih * fi;
                 const cx = q.x + q.w / 2, top = q.y + (q.h - groupH) / 2;
-                const ic = this.add.image(cx, top + (nm.height + gap) * fit + ih * fi / 2, key)
+                const ic = this.add.image(cx, top + (nm.height + gap) * fn + ih * fi / 2, key)
                     .setDisplaySize(iw * fi, ih * fi);
-                nm.setPosition(cx, top + nm.height * fit).setScale(fit);
+                nm.setPosition(cx, top + nm.height * fn).setScale(fn);
                 box.addAt(ic, box.getIndex(numBox));
                 box.addAt(nm, box.getIndex(numBox));
                 f.icon = ic;
