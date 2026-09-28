@@ -902,8 +902,12 @@ var CONFIG = {
                 ICON:       true,
                 ICON_SIZE:  56,    // px @ design, as it shows on the card
                 ICON_FRAC:  0.6,   // never past this share of the field
-                ICON_MIN:   32,    // …but never under this, px @ design on the card —
-                                   // a small field's icon reaches past its edges instead
+                // …but never smaller than the card's ICON_MIN_RANK-th smallest
+                // icon (2: the second smallest), so the one small field's icon
+                // is raised to its neighbour's size and reaches past its edges
+                // instead. ICON_MIN: a floor in px @ design on top of that; 0 none.
+                ICON_MIN_RANK: 2,
+                ICON_MIN:   0,
                 NAME_SIZE:  16,    // the crop's name over it, px @ design on the card
                 // Shown, the icon (and name) swell and settle once — up to
                 // PULSE_SCALE and back over PULSE_MS — then the card goes.

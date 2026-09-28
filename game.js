@@ -4152,6 +4152,35 @@ class GameScene extends Phaser.Scene {
             box.add(edge);
         }
 
+        // HOW BIG A FIELD'S ICON COMES OUT ON ITS OWN — the longer side, on
+        // the card, sized and fitted exactly as showIcon does it. A crop whose
+        // icon has not arrived is taken as square for now, and not kept.
+        const iconNatural = (f) => {
+            if (f.natIcon !== undefined) return f.natIcon;
+            const U = MI.UNLOCK || {};
+            const name = this._cropForLevel(f.lvl);
+            const key = this._cropIconKey(name);
+            const have = this.textures.exists(key);
+            const src = have ? this.textures.get(key).get() : { width: 1, height: 1 };
+            const q = f.cell;
+            const most = Math.min((U.ICON_SIZE !== undefined ? U.ICON_SIZE : 56) * s / kc,
+                                  Math.min(q.w, q.h) * (U.ICON_FRAC !== undefined ? U.ICON_FRAC : 0.6));
+            const k = most / Math.max(src.width, src.height);
+            const iw = src.width * k, ih = src.height * k;
+            const t = this.add.text(0, 0, this._cropTitle(name), {
+                fontSize: Math.round((U.NAME_SIZE !== undefined ? U.NAME_SIZE : 16) * s / kc) + 'px',
+                fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
+                strokeThickness: Math.max(1, Math.round(2.5 * s / kc)),
+            });
+            const nw = t.width, nh = t.height;
+            t.destroy();
+            const gap = 3 * s / kc;
+            const fit = Math.min(1, (q.w * 0.9) / Math.max(iw, nw), (q.h * 0.9) / (nh + gap + ih));
+            const v = Math.max(iw, ih) * fit;
+            if (have) f.natIcon = v;
+            return v;
+        };
+
         const api = {
             box, batch,
             // THE FIELD HARVESTED, once, when its level is over: a front
@@ -4226,10 +4255,14 @@ class GameScene extends Phaser.Scene {
                 const gap = 3 * s / kc;
                 const fit = Math.min(1, (q.w * 0.9) / Math.max(iw, nm.width),
                                         (q.h * 0.9) / (nm.height + gap + ih));
-                // NEVER SMALLER THAN ICON_MIN on the card, however small the
-                // field — a small field's icon may reach past its edges rather
-                // than shrink out of sight. Only the icon: the name still fits.
-                const minI = (U.ICON_MIN !== undefined ? U.ICON_MIN : 32) * s / kc;
+                // NEVER SMALLER THAN THE CARD'S SECOND-SMALLEST ICON (the
+                // ICON_MIN_RANK-th smallest, as each would come out on its
+                // own), nor ICON_MIN — so the one small field's icon is raised
+                // to its neighbour's size, reaching past its edges rather than
+                // shrinking out of sight. Only the icon: the name still fits.
+                const nat = Object.values(fields).map((g) => iconNatural(g)).sort((a, b) => a - b);
+                const rank = Math.max(1, U.ICON_MIN_RANK !== undefined ? U.ICON_MIN_RANK : 2);
+                const minI = Math.max((U.ICON_MIN || 0) * s / kc, nat[Math.min(rank, nat.length) - 1] || 0);
                 const fi = Math.max(fit, minI / Math.max(iw, ih));
                 const groupH = nm.height * fit + gap * fit + ih * fi;
                 const cx = q.x + q.w / 2, top = q.y + (q.h - groupH) / 2;
