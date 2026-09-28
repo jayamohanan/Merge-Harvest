@@ -1540,7 +1540,10 @@ class GameScene extends Phaser.Scene {
     // bigger plant straight back down. The spacing is untouched.
     _rowPlacement(i, cx, baseY, w, h, nMax, n, flip, lvl) {
         const SS = (CONFIG.CROPS || {}).SPRITE_SPACE || {};
-        const g = SS.PLANT_SCALE > 0 ? SS.PLANT_SCALE : 1;
+        // Its own figure in landscape (PLANT_SCALE_LANDSCAPE), where there
+        // is less height to grow into; PLANT_SCALE otherwise.
+        const want = !this.isPortrait && SS.PLANT_SCALE_LANDSCAPE !== undefined ? SS.PLANT_SCALE_LANDSCAPE : SS.PLANT_SCALE;
+        const g = want > 0 ? want : 1;
         const out = this._rowPlacementFitted(i, cx, baseY, w, h, nMax, n, flip, lvl);
         if (g !== 1) for (const q of out) { q.pw *= g; q.ph *= g; }
         return out;
