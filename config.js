@@ -771,7 +771,7 @@ var CONFIG = {
         // shows it — ‹ › or the arrow keys to step through. Covers the farm
         // info and crop; does nothing. ENABLED: false to play.
         PREVIEW: {
-            ENABLED: true,
+            ENABLED: false,
             VIEW:    'open',          // 'open' — every field unshaded, all crops
                                       // shown; 'start' — as the section opens in play
             DEPTH:   60,
@@ -1244,7 +1244,7 @@ var CONFIG = {
             // them, with a line through each row's feet — for lining the three
             // rows up. Covers the field; does nothing. ENABLED: false to play.
             STUMP_PREVIEW: {
-                ENABLED:     false,
+                ENABLED:     true,
                 CROP:        'tomato',
                 COUNT:       10,
                 GUIDES:      true,
@@ -1262,7 +1262,7 @@ var CONFIG = {
             // and each row's count live. Covers the field; does nothing.
             // ENABLED: false to play.
             CROP_PREVIEW: {
-                ENABLED:     true,
+                ENABLED:     false,
                 CROP:        'tomato',
                 COUNTS:      [10, 10, 10],   // plot 1, 2, 3 — at most DEPTH.ROW_MAX
                 // THE PLANTS' ROOM — the band between the farm info and the
