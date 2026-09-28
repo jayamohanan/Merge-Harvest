@@ -767,6 +767,21 @@ var CONFIG = {
         // or the file named here where it differs from the crop's name.
         ICON_DIR:   'graphics/crop/icon/',
         ICON_FILES: { 'chilly-pepper': 'chilly' },
+        // ── ANGLED FIELDS ─────────────────────────────────────────────────
+        // From FROM_SECTION on, a card is split by tilted straight cuts into
+        // quadrilaterals and wedges — farmland from the air — instead of the
+        // squarified rectangles section 1 keeps. Areas still follow the crops.
+        // See _angledCuts.
+        CUTS: {
+            ENABLED:       true,
+            FROM_SECTION:  2,         // 1-based: section 1 (levels 1–5) stays rectangles
+            ANGLE_MIN_DEG: 10,        // each cut's tilt off straight, either way
+            ANGLE_MAX_DEG: 35,
+            SPLIT_MIN:     0.3,       // a cut's smaller side takes at least this share
+            MIN_ROUNDNESS: 0.042,     // no field thinner than this (area ÷ perimeter²:
+                                      // square 0.0625, 4:1 strip 0.04); retried if so
+            TRIES:         12,        // layouts tried before the straight-cut fallback
+        },
         // ── A SECTION COMPLETE (every fifth level) ─────────────────────────
         // The icons wave, "Fields 1–5 Completed!" is stamped on the card, a
         // bonus showers to the counter (BONUS_FRAC of the five levels' crops,

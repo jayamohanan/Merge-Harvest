@@ -3552,13 +3552,31 @@ class GameScene extends Phaser.Scene {
         // the same corner twice running.
         const weights = levels.map((l) => Math.sqrt(cropValuesFor(l).reduce((a, v) => a + v, 0)));
         const flipT = batch % 2 === 1, flipX = (batch >> 1) % 2 === 1, flipY = (batch >> 2) % 2 === 1;
-        const W = flipT ? area.h : area.w, H = flipT ? area.w : area.h;
-        const rects = this._squarify(weights, W, H).map((r) => {
-            let q = flipT ? { x: r.y, y: r.x, w: r.h, h: r.w } : r;
-            if (flipX) q = { ...q, x: area.w - q.x - q.w };
-            if (flipY) q = { ...q, y: area.h - q.y - q.h };
-            return { x: area.x + q.x, y: area.y + q.y, w: q.w, h: q.h };
-        });
+        // FROM SECTION CUTS.FROM_SECTION ON, ANGLED CUTS instead: the card
+        // split by tilted straight lines into quadrilaterals and wedges, a
+        // patchwork no two sections share (_angledCuts). Each field is then a
+        // polygon, and `rects` stays null.
+        const CU = M.CUTS || {};
+        const angled = CU.ENABLED !== false && batch + 1 >= (CU.FROM_SECTION !== undefined ? CU.FROM_SECTION : 2);
+        let rects = null, polys;
+        if (angled) {
+            polys = this._angledCuts(weights, [
+                { x: area.x, y: area.y }, { x: area.x + area.w, y: area.y },
+                { x: area.x + area.w, y: area.y + area.h }, { x: area.x, y: area.y + area.h },
+            ], batch, CU);
+        } else {
+            const W = flipT ? area.h : area.w, H = flipT ? area.w : area.h;
+            rects = this._squarify(weights, W, H).map((r) => {
+                let q = flipT ? { x: r.y, y: r.x, w: r.h, h: r.w } : r;
+                if (flipX) q = { ...q, x: area.w - q.x - q.w };
+                if (flipY) q = { ...q, y: area.h - q.y - q.h };
+                return { x: area.x + q.x, y: area.y + q.y, w: q.w, h: q.h };
+            });
+            polys = rects.map((r) => [
+                { x: r.x, y: r.y }, { x: r.x + r.w, y: r.y },
+                { x: r.x + r.w, y: r.y + r.h }, { x: r.x, y: r.y + r.h },
+            ]);
+        }
 
         const gap  = (M.GAP !== undefined ? M.GAP : 8) * s;
         const rad  = (M.RADIUS !== undefined ? M.RADIUS : 10) * s;
@@ -3664,23 +3682,68 @@ class GameScene extends Phaser.Scene {
         };
 
         levels.forEach((lvl, i) => {
-            const r = rects[i];
-            const x = r.x + gap / 2, y = r.y + gap / 2, w = Math.max(4, r.w - gap), h = Math.max(4, r.h - gap);
+            const P = polys[i];
+            // The field's room — its cell less half the strip all round. A
+            // rectangle, simply shrunk; an angled field, each side pushed in.
+            let x, y, w, h, ip = null, dir = null;
+            if (rects) {
+                const r = rects[i];
+                x = r.x + gap / 2; y = r.y + gap / 2; w = Math.max(4, r.w - gap); h = Math.max(4, r.h - gap);
+            } else {
+                ip = this._polyInset(P, gap / 2);
+                const bb = this._polyBounds(ip);
+                x = bb.x; y = bb.y; w = Math.max(4, bb.w); h = Math.max(4, bb.h);
+            }
             const name = this._cropForLevel(lvl);
-            const f = { lvl, cv: null, ctx: null, x, y, res, plants: [], order: [], cleared: 0, cell: r };
+            // `cell`: where the icon, the puff and the like go — the rect
+            // itself, or the biggest box an angled field holds.
+            const f = { lvl, cv: null, ctx: null, x, y, res, plants: [], order: [], cleared: 0,
+                        poly: P, cell: rects ? rects[i] : this._polyInnerRect(P) };
             const done = lvl < doneBelow;
 
             // The rows run along the field's long side; fields are told apart
             // by their rows' direction and the plain strips between them.
             const along = w >= h;
             const rows = [];
-            if (along) for (let yy = y + fs * 0.75; yy < y + h - fs * 0.4; yy += fs) rows.push(yy);
-            else       for (let xx = x + fs * 0.75; xx < x + w - fs * 0.4; xx += fs) rows.push(xx);
-            rows.forEach((v, k) => {
-                const seed = lvl * 97 + k;
-                if (along) furrow(x + rad * 0.6, v, x + w - rad * 0.6, v, seed);
-                else       furrow(v, y + rad * 0.6, v, y + h - rad * 0.6, seed);
-            });
+            if (rects) {
+                if (along) for (let yy = y + fs * 0.75; yy < y + h - fs * 0.4; yy += fs) rows.push(yy);
+                else       for (let xx = x + fs * 0.75; xx < x + w - fs * 0.4; xx += fs) rows.push(xx);
+                rows.forEach((v, k) => {
+                    const seed = lvl * 97 + k;
+                    if (along) furrow(x + rad * 0.6, v, x + w - rad * 0.6, v, seed);
+                    else       furrow(v, y + rad * 0.6, v, y + h - rad * 0.6, seed);
+                });
+            } else {
+                // AN ANGLED FIELD'S ROWS run parallel to its longest side, as
+                // a field is ploughed along its longest edge; each row spans
+                // the field wall to wall, and the whole is clipped to its shape.
+                let ux = 1, uy = 0, longest = -1;
+                for (let k = 0; k < P.length; k++) {
+                    const a = P[k], b = P[(k + 1) % P.length];
+                    const L = Math.hypot(b.x - a.x, b.y - a.y);
+                    if (L > longest) { longest = L; ux = (b.x - a.x) / L; uy = (b.y - a.y) / L; }
+                }
+                if (ux < -1e-6 || (Math.abs(ux) <= 1e-6 && uy < 0)) { ux = -ux; uy = -uy; }
+                let vx = -uy, vy = ux;
+                if (vy < -1e-6 || (Math.abs(vy) <= 1e-6 && vx < 0)) { vx = -vx; vy = -vy; }
+                const onV = ip.map((p) => p.x * vx + p.y * vy);
+                const onU = ip.map((p) => p.x * ux + p.y * uy);
+                dir = { ux, uy, vx, vy, smin: Math.min(...onU), smax: Math.max(...onU) };
+                const vmax = Math.max(...onV);
+                for (let val = Math.min(...onV) + fs * 0.75; val < vmax - fs * 0.4; val += fs) rows.push(val);
+                const at = (s, val) => ({ x: ux * s + vx * val, y: uy * s + vy * val });
+                sx.save();
+                this._polyPath(sx, ip);
+                sx.clip();
+                rows.forEach((val, k) => {
+                    const sp = this._polySpan(ip, ux, uy, vx, vy, val);
+                    if (!sp) return;
+                    const a = at(sp[0] + rad * 0.6, val), b = at(sp[1] - rad * 0.6, val);
+                    furrow(a.x, a.y, b.x, b.y, lvl * 97 + k);
+                });
+                sx.restore();
+                dir.at = at;
+            }
 
             // THE CROP: leafy tufts with the crop's fruit (_fieldTuftTextures),
             // each turned, sized and nudged by a stable hash, staggered row to
@@ -3709,14 +3772,29 @@ class GameScene extends Phaser.Scene {
                 const ps = fs * (M.PLANT_SPACING !== undefined ? M.PLANT_SPACING : 0.55);
                 rows.forEach((v, k) => {
                     const off = fs * 0.4 + (k % 2 ? ps * 0.5 : 0);
-                    if (along) for (let xx = x + off; xx < x + w - fs * 0.35; xx += ps) plant(xx, v);
-                    else       for (let yy = y + off; yy < y + h - fs * 0.35; yy += ps) plant(v, yy);
+                    if (dir) {
+                        const sp = this._polySpan(ip, dir.ux, dir.uy, dir.vx, dir.vy, v);
+                        if (sp) for (let s2 = sp[0] + off; s2 < sp[1] - fs * 0.35; s2 += ps) {
+                            const p = dir.at(s2, v);
+                            plant(p.x, p.y);
+                        }
+                    }
+                    else if (along) for (let xx = x + off; xx < x + w - fs * 0.35; xx += ps) plant(xx, v);
+                    else            for (let yy = y + off; yy < y + h - fs * 0.35; yy += ps) plant(v, yy);
                 });
                 if (f.plants.length) {
                     const key = `field_crop_${uid}_${lvl}`;
                     const cw = Math.max(1, Math.ceil(w * res)), ch = Math.max(1, Math.ceil(h * res));
                     f.cv = this.textures.createCanvas(key, cw, ch);
                     f.ctx = f.cv.getContext();
+                    // An angled field's crop stops at its own edges, as a
+                    // rectangle's does at its image's.
+                    if (ip) {
+                        f.ctx.save();
+                        f.ctx.setTransform(res, 0, 0, res, -x * res, -y * res);
+                        this._polyPath(f.ctx, ip);
+                        f.ctx.clip();
+                    }
                     for (const q of f.plants) {
                         f.ctx.save();
                         f.ctx.setTransform(res, 0, 0, res, 0, 0);
@@ -3725,6 +3803,7 @@ class GameScene extends Phaser.Scene {
                         f.ctx.drawImage(this.textures.get(q.key).getSourceImage(), -q.d / 2, -q.d / 2, q.d, q.d);
                         f.ctx.restore();
                     }
+                    if (ip) f.ctx.restore();
                     f.cv.refresh();
                     texKeys.push(key);
                     box.add(this.add.image(x, y, key).setOrigin(0, 0).setDisplaySize(cw / res, ch / res));
@@ -3734,10 +3813,13 @@ class GameScene extends Phaser.Scene {
                     // turned — so the bare ground opens up from one side. Only
                     // a hair of jitter (MINI.SWEEP_JITTER), so the front is a
                     // line and not a ruler's edge.
-                    const back = along ? flipX : flipY;          // which end starts
+                    // An angled field runs along its rows, from an end the
+                    // seed picks.
+                    const back = dir ? this._cellHash(batch, lvl, 223) < 0.5 : (along ? flipX : flipY);
                     const jit2 = MI.SWEEP_JITTER !== undefined ? MI.SWEEP_JITTER : 0.04;
                     f.order = f.plants.map((q, j) => {
-                        let u = along ? (q.x - x) / w : (q.y - y) / h;
+                        let u = dir ? ((q.x * dir.ux + q.y * dir.uy) - dir.smin) / ((dir.smax - dir.smin) || 1)
+                            : along ? (q.x - x) / w : (q.y - y) / h;
                         if (!back) u = 1 - u;
                         return { j, t: u + (q.k - 0.5) * jit2 };
                     }).sort((a, b) => a.t - b.t).map((o) => o.j);
@@ -3754,7 +3836,25 @@ class GameScene extends Phaser.Scene {
                 stroke: MI.NUMBER_STROKE || '#3b2a17',
                 strokeThickness: Math.max(1, Math.round(2.5 * s / kc)),
             }).setOrigin(0, 0);
-            f.numFit = Math.min(1, (w - 2 * miniInset) / f.num.width, (h - 2 * miniInset) / f.num.height);
+            if (ip) {
+                // AN ANGLED FIELD: fitted to the biggest box it holds, then
+                // slid from there towards its top-left for as far as it still
+                // fits — into the corner, where a rectangle's number sits.
+                const room = this._polyInnerRect(ip);
+                f.numFit = Math.min(1, (room.w - 2 * miniInset) / f.num.width, (room.h - 2 * miniInset) / f.num.height);
+                const nw = f.num.width * Math.max(0.05, f.numFit), nh = f.num.height * Math.max(0.05, f.numFit);
+                const ax = room.x + miniInset, ay = room.y + miniInset;
+                const fits = (px, py) => [[px - miniInset, py - miniInset], [px + nw + miniInset, py - miniInset],
+                    [px + nw + miniInset, py + nh + miniInset], [px - miniInset, py + nh + miniInset]]
+                    .every(([cx, cy]) => this._polyContains(ip, cx, cy));
+                for (let t = 1; t > 0; t -= 0.05) {
+                    const px = ax + (x + miniInset - ax) * t, py = ay + (y + miniInset - ay) * t;
+                    if (fits(px, py)) { f.num.setPosition(px, py); break; }
+                    if (t <= 0.05) f.num.setPosition(ax, ay);
+                }
+            } else {
+                f.numFit = Math.min(1, (w - 2 * miniInset) / f.num.width, (h - 2 * miniInset) / f.num.height);
+            }
             f.num.setScale(Math.max(0.05, f.numFit));
             numBox.add(f.num);
             fields[lvl] = f;
@@ -3789,13 +3889,17 @@ class GameScene extends Phaser.Scene {
             c.arcTo(area.x, area.y, area.x + area.w, area.y, R);
             c.closePath();
             c.clip();
-            c.fillStyle = MI.VEIL_COLOR || '#1e1810';
+            c.fillStyle = c.strokeStyle = MI.VEIL_COLOR || '#1e1810';
+            c.lineWidth = 1;
+            c.lineJoin = 'round';
             // Each field's WHOLE cell, gap and all — neighbours meet, and the
-            // shade is one shape. A hair over, so no seam shows between them.
+            // shade is one shape. A hair over (the stroke), so no seam shows
+            // between them.
             for (const f of Object.values(fields)) {
                 if (f.lvl <= current) continue;
-                const q = f.cell;
-                c.fillRect(q.x - 0.5, q.y - 0.5, q.w + 1, q.h + 1);
+                this._polyPath(c, f.poly);
+                c.fill();
+                c.stroke();
             }
             c.restore();
             veilCv.refresh();
@@ -3978,7 +4082,7 @@ class GameScene extends Phaser.Scene {
                 const ms = U.MS !== undefined ? U.MS : 380;
                 const q = f.cell;
                 const lid = this.add.graphics();
-                lid.fillStyle(hexColor(MI.VEIL_COLOR || '#1e1810'), 1).fillRect(q.x, q.y, q.w, q.h);
+                lid.fillStyle(hexColor(MI.VEIL_COLOR || '#1e1810'), 1).fillPoints(f.poly, true);
                 lid.setAlpha(veil.alpha);
                 box.addAt(lid, box.getIndex(veil) + 1);
                 api.setCurrent(lvl);                   // the real shade gone under the lid
@@ -4061,6 +4165,178 @@ class GameScene extends Phaser.Scene {
         }
         if (row.length) place(row);
         return out;
+    }
+
+    // ANGLED CUTS: the convex polygon P split among `values` by straight cuts
+    // tilted ANGLE_MIN_DEG–ANGLE_MAX_DEG either way, each placed so its two
+    // sides take exactly their fields' share of the area. Which fields go to
+    // which side is picked at random among the groupings whose smaller side
+    // has at least SPLIT_MIN of the piece, so the pattern differs section to
+    // section and not only its angles. Each cut runs across the piece's longer
+    // extent, which keeps pieces chunky; a layout with a field thinner than
+    // MIN_ROUNDNESS (area ÷ perimeter²: a square 0.0625, a 4:1 strip 0.04) is
+    // tried again with other draws, and the last try cuts straight — so a
+    // usable layout always comes back. Returns one polygon per value, in the
+    // order given. Stable per `seed`.
+    _angledCuts(values, P0, seed, C) {
+        const lo = C.ANGLE_MIN_DEG !== undefined ? C.ANGLE_MIN_DEG : 10;
+        const hi = C.ANGLE_MAX_DEG !== undefined ? C.ANGLE_MAX_DEG : 35;
+        const minShare = C.SPLIT_MIN !== undefined ? C.SPLIT_MIN : 0.3;
+        const want  = C.MIN_ROUNDNESS !== undefined ? C.MIN_ROUNDNESS : 0.042;
+        const tries = C.TRIES !== undefined ? C.TRIES : 12;
+        const area = (P) => Math.abs(this._polySignedArea(P));
+        const round = (P) => {
+            let per = 0;
+            for (let k = 0; k < P.length; k++) {
+                const a = P[k], b = P[(k + 1) % P.length];
+                per += Math.hypot(b.x - a.x, b.y - a.y);
+            }
+            return per > 0 ? area(P) / (per * per) : 0;
+        };
+        let best = null, bestQ = -1;
+        for (let t = 0; t <= tries; t++) {
+            const tilt = t < tries ? 1 : 0;
+            let n = 0;
+            const rnd = () => this._cellHash(seed * 17 + t, n++, 211);
+            const out = [];
+            const split = (P, items) => {
+                if (items.length === 1) { out[items[0].i] = P; return; }
+                const sum = items.reduce((a, it) => a + it.v, 0) || 1;
+                const m = items.length;
+                const opts = [];
+                let even = 1, evenD = Infinity;
+                // Every grouping once (the last field always on the far side).
+                for (let mask = 1; mask < (1 << (m - 1)); mask++) {
+                    let a = 0;
+                    for (let k = 0; k < m; k++) if ((mask >> k) & 1) a += items[k].v;
+                    const sh = Math.min(a, sum - a) / sum;
+                    if (sh >= minShare) opts.push(mask);
+                    if (Math.abs(0.5 - sh) < evenD) { evenD = Math.abs(0.5 - sh); even = mask; }
+                }
+                const mask = opts.length ? opts[Math.floor(rnd() * opts.length) % opts.length] : even;
+                let g0 = items.filter((it, k) => (mask >> k) & 1);
+                let g1 = items.filter((it, k) => !((mask >> k) & 1));
+                if (rnd() < 0.5) [g0, g1] = [g1, g0];
+                const s0 = g0.reduce((a, it) => a + it.v, 0);
+                const b = this._polyBounds(P);
+                const deg = (lo + (hi - lo) * rnd()) * (rnd() < 0.5 ? -1 : 1) * tilt;
+                const th = ((b.w >= b.h ? 0 : 90) + deg) * Math.PI / 180;
+                const nx = Math.cos(th), ny = Math.sin(th);
+                let a = Infinity, z = -Infinity;
+                for (const p of P) { const d = p.x * nx + p.y * ny; a = Math.min(a, d); z = Math.max(z, d); }
+                const target = area(P) * s0 / sum;
+                for (let it = 0; it < 40; it++) {
+                    const mid = (a + z) / 2;
+                    if (area(this._polyClip(P, nx, ny, mid)) < target) a = mid; else z = mid;
+                }
+                const cut = (a + z) / 2;
+                split(this._polyClip(P, nx, ny, cut), g0);
+                split(this._polyClip(P, -nx, -ny, -cut), g1);
+            };
+            split(P0, values.map((v, i) => ({ v, i })));
+            const q = Math.min(...out.map(round));
+            if (q > bestQ) { bestQ = q; best = out; }
+            if (q >= want) break;
+        }
+        return best;
+    }
+
+    // ── CONVEX POLYGONS, as lists of {x, y} ─────────────────────────────────
+    _polySignedArea(P) {
+        let s = 0;
+        for (let k = 0; k < P.length; k++) {
+            const a = P[k], b = P[(k + 1) % P.length];
+            s += a.x * b.y - b.x * a.y;
+        }
+        return s / 2;
+    }
+    // The part of P where p·n ≤ t.
+    _polyClip(P, nx, ny, t) {
+        const out = [];
+        for (let k = 0; k < P.length; k++) {
+            const a = P[k], b = P[(k + 1) % P.length];
+            const da = a.x * nx + a.y * ny - t, db = b.x * nx + b.y * ny - t;
+            if (da <= 0) out.push(a);
+            if ((da < 0 && db > 0) || (da > 0 && db < 0)) {
+                const k2 = da / (da - db);
+                out.push({ x: a.x + (b.x - a.x) * k2, y: a.y + (b.y - a.y) * k2 });
+            }
+        }
+        return out;
+    }
+    // P with every side pushed in by d.
+    _polyInset(P, d) {
+        const sg = this._polySignedArea(P) >= 0 ? 1 : -1;
+        let Q = P;
+        for (let k = 0; k < P.length && Q.length; k++) {
+            const a = P[k], b = P[(k + 1) % P.length];
+            const L = Math.hypot(b.x - a.x, b.y - a.y);
+            if (L < 1e-6) continue;
+            const nx = -(b.y - a.y) / L * sg, ny = (b.x - a.x) / L * sg;      // inward
+            Q = this._polyClip(Q, -nx, -ny, -(a.x * nx + a.y * ny + d));
+        }
+        return Q.length >= 3 ? Q : P;
+    }
+    _polyBounds(P) {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (const p of P) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+        return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    }
+    _polyContains(P, x, y) {
+        const sg = this._polySignedArea(P) >= 0 ? 1 : -1;
+        for (let k = 0; k < P.length; k++) {
+            const a = P[k], b = P[(k + 1) % P.length];
+            if (((b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x)) * sg < -1e-6) return false;
+        }
+        return true;
+    }
+    // The biggest upright box P holds about its centre of area, over a few
+    // shapes of box — where a field's icon and number go.
+    _polyInnerRect(P) {
+        const b = this._polyBounds(P);
+        const A = this._polySignedArea(P);
+        let cx = 0, cy = 0;
+        for (let k = 0; k < P.length; k++) {
+            const p = P[k], q = P[(k + 1) % P.length];
+            const c = p.x * q.y - q.x * p.y;
+            cx += (p.x + q.x) * c; cy += (p.y + q.y) * c;
+        }
+        if (Math.abs(A) > 1e-6) { cx /= 6 * A; cy /= 6 * A; } else { cx = b.x + b.w / 2; cy = b.y + b.h / 2; }
+        let best = { x: cx, y: cy, w: 0, h: 0 };
+        const ar = b.w / (b.h || 1);
+        for (const r of [ar, 1, ar * 1.6, ar / 1.6]) {
+            const sw = Math.sqrt(r), sh = 1 / sw;
+            let k0 = 0, k1 = Math.max(b.w, b.h) * 2;
+            for (let it = 0; it < 24; it++) {
+                const k = (k0 + k1) / 2, hw = k * sw / 2, hh = k * sh / 2;
+                const ok = this._polyContains(P, cx - hw, cy - hh) && this._polyContains(P, cx + hw, cy - hh)
+                        && this._polyContains(P, cx + hw, cy + hh) && this._polyContains(P, cx - hw, cy + hh);
+                if (ok) k0 = k; else k1 = k;
+            }
+            const w = k0 * sw, h = k0 * sh;
+            if (w * h > best.w * best.h) best = { x: cx - w / 2, y: cy - h / 2, w, h };
+        }
+        return best;
+    }
+    // Where the row p·v = val crosses P, as positions along u: [from, to].
+    _polySpan(P, ux, uy, vx, vy, val) {
+        let s0 = Infinity, s1 = -Infinity;
+        for (let k = 0; k < P.length; k++) {
+            const a = P[k], b = P[(k + 1) % P.length];
+            const da = a.x * vx + a.y * vy - val, db = b.x * vx + b.y * vy - val;
+            if ((da <= 0 && db >= 0) || (da >= 0 && db <= 0)) {
+                const k2 = da === db ? 0 : da / (da - db);
+                const px = a.x + (b.x - a.x) * k2, py = a.y + (b.y - a.y) * k2;
+                const s = px * ux + py * uy;
+                s0 = Math.min(s0, s); s1 = Math.max(s1, s);
+            }
+        }
+        return s1 > s0 ? [s0, s1] : null;
+    }
+    _polyPath(ctx, P) {
+        ctx.beginPath();
+        P.forEach((p, k) => (k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+        ctx.closePath();
     }
 
     // A crop's display name — FARM_INFO.NAMES where the file name is not
