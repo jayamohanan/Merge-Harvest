@@ -1196,6 +1196,23 @@ var CONFIG = {
             // of every level, whatever COUNTS says — to see how a long row
             // looks. null for the real game. At most DEPTH.ROW_MAX.
             DEBUG_COUNT: null,
+            // PREVIEW ONLY: a panel over the farm half showing every plot's
+            // row as COUNT stumps of CROP, where a real level would stand
+            // them, with a line through each row's feet — for lining the three
+            // rows up. Covers the field; does nothing. ENABLED: false to play.
+            STUMP_PREVIEW: {
+                ENABLED:     false,
+                CROP:        'tomato',
+                COUNT:       10,
+                GUIDES:      true,
+                GUIDE_COLORS: [0xd0342c, 0x2c7bd0, 0x2ca24a],   // plot 1, 2, 3
+                // Flat lines from row 1's front and back stumps to the right
+                // edge — the level the other rows are read against.
+                LEVEL_LINES: true,
+                LEVEL_LINE_COLOR: 0x2b2013,
+                PANEL_ALPHA: 1,
+                DEPTH:       60,
+            },
             PER_PLANT_FIGURE: false,
             STEP_X:     0.20,   // each plant behind: this × a plant's width right…
             STEP_Y:     0.12,   // …this × its height up…
@@ -1219,7 +1236,18 @@ var CONFIG = {
             // share of the full one. Flat rows stepping right by the same
             // amount do not look parallel; each one further right steps a
             // little less. Plant size and the upward step are not touched.
-            PLOT_STEP_X: [1, 0.65, 0.3],
+            PLOT_STEP_X: [1, 0.65, 0.3],   // (only row 1's shapes the rows now —
+                                           // see BACK_GAP_FRAC)
+            // THE ROWS' SPACING, set once for the full 3 × ROW_MAX field and
+            // then used by EVERY level: each row gets a front position and one
+            // fixed x/y step per plant behind, and a shorter row is just the
+            // first few plants of its full row. These two shape that field —
+            // rows 2 and 3 follow row 1 one gap and two to its right, the gap
+            // at the back plant BACK_GAP_FRAC of the front one.
+            BACK_GAP_FRAC: 0.85,
+            // …and the front gap itself, as a share of what the plots' own
+            // layout gives. Below 1 moves rows 2 and 3 left, toward row 1.
+            FRONT_GAP_FRAC: 0.85,
             // The ones not yet being worked — 1 is fully solid, lower dims them
             // until their turn comes.
             WAITING_ALPHA: 1,

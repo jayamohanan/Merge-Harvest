@@ -581,6 +581,7 @@ class GameScene extends Phaser.Scene {
         this.createSlots();
         this.buildCrops(this.cropLevel, false);
         this._makeFieldMini();
+        this._showStumpPreview();
         (this.crops || []).forEach((c, i) => this._restoreCrop(c, kept[i]));
         this._setFarmHarvested();
 
@@ -789,6 +790,7 @@ class GameScene extends Phaser.Scene {
         this.createSlots();
         this.buildCrops();
         this._makeFieldMini();
+        this._showStumpPreview();
 
         // The merge half
         this.createGrid();
@@ -1521,6 +1523,189 @@ class GameScene extends Phaser.Scene {
              + (B[layer] !== undefined ? B[layer] : inBand[layer]);
     }
 
+    // WHERE EACH PLANT OF A ROW STANDS — plot `i`, its foot line `baseY`, a
+    // plant `w`×`h` at full size, the level's longest row `nMax` plants and
+    // this one holding `n`. One place, used by the field and by the row
+    // preview (MULTI.STUMP_PREVIEW), so the two can never disagree.
+    // Returns, per plant, front first: its position, drawn size and flip.
+    //
+    // ONE FIXED LAYOUT FOR EVERY LEVEL: the full 3 × ROW_MAX field (see
+    // _rowGrid) gives each row a FRONT POSITION and one STEP — x and y — to
+    // each plant behind, the same step all along that row (rows may differ).
+    // Every level stands its plants on those: a row of three is simply the
+    // first three of its row of ten, at the same places and sizes. The one
+    // exception is a level of single plants, which stand centred over their
+    // slots as they always have.
+    _rowPlacement(i, cx, baseY, w, h, nMax, n, flip, lvl) {
+        const rows = this.farmRows || [];
+        if (nMax < 2 || rows.length < 3) return this._rowPlacementRaw(i, cx, baseY, w, h, nMax, n, flip, lvl);
+        const maxN = Math.max(2, ((CONFIG.CROPS || {}).DEPTH || {}).ROW_MAX || 10);
+        const full = this._rowGrid(baseY, w, h, flip, lvl, maxN)[i];
+        const f0 = full[0], fl = full[maxN - 1];
+        const stepX = (fl.px - f0.px) / (maxN - 1), stepY = (fl.pby - f0.pby) / (maxN - 1);
+        const out = [];
+        for (let k = 0; k < Math.min(n, maxN); k++) {
+            const q = full[k];
+            out.push({ pflip: q.pflip, sk: q.sk, pw: q.pw, ph: q.ph,
+                       px: f0.px + k * stepX, pby: f0.pby + k * stepY });
+        }
+        return out;
+    }
+
+    // THE FULL FIELD, 3 rows × `maxN` — the layout every level takes its
+    // front positions and steps from. Row 1 as its own layout draws it; rows
+    // 2 and 3 copies of it moved right by one gap and two (the plots' own
+    // front gap × FRONT_GAP_FRAC), the gap closing to BACK_GAP_FRAC of that
+    // at the back plant. These are the settings the rows were tuned by.
+    _rowGrid(baseY, w, h, flip, lvl, maxN) {
+        const rows = this.farmRows || [];
+        const MP = (CONFIG.CROPS || {}).MULTI || {};
+        const raw = (j) => this._rowPlacementRaw(j, rows[j].cx, baseY, w, h, maxN, maxN, flip, lvl);
+        const r1 = raw(0);
+        const xGap = (raw(rows.length - 1)[0].px - r1[0].px) / (rows.length - 1)
+                   * (MP.FRONT_GAP_FRAC !== undefined ? MP.FRONT_GAP_FRAC : 0.85);
+        const back = MP.BACK_GAP_FRAC !== undefined ? MP.BACK_GAP_FRAC : 0.85;
+        return rows.map((row, i) => {
+            const own = this._rowPlacementRaw(i, row.cx, baseY, w, h, maxN, maxN, flip, lvl);
+            for (let k = 0; k < maxN; k++) {
+                const gap = xGap * (1 - (1 - back) * (k / (maxN - 1)));
+                own[k].px = r1[k].px + i * gap;
+                own[k].pby = r1[k].pby;
+            }
+            return own;
+        });
+    }
+
+    // One row as laid out on its own — its sizes, heights, flips, and the
+    // sideways step it takes; see _rowPlacement for how the three are then
+    // spaced against each other.
+    _rowPlacementRaw(i, cx, baseY, w, h, nMax, n, flip, lvl) {
+        const MP = (CONFIG.CROPS || {}).MULTI || {};
+        const stepX = MP.STEP_X !== undefined ? MP.STEP_X : 0.16;
+        const stepY = MP.STEP_Y !== undefined ? MP.STEP_Y : 0.07;
+        const scStep = MP.SCALE_STEP !== undefined ? MP.SCALE_STEP : 0.05;
+        // THE DIAGONAL, CAPPED: STEP_X per plant, but never more than
+        // SPAN_MAX plant-widths end to end — a long row packs its plants
+        // closer rather than being shrunk to fit a longer diagonal.
+        const shiftMax = Math.min((nMax - 1) * stepX,
+                                  MP.SPAN_MAX !== undefined ? MP.SPAN_MAX : 0.8);
+        const dx0 = nMax > 1 ? shiftMax / (nMax - 1) : 0;
+        const shift = dx0 * (n - 1);   // this row's own diagonal
+        const dy  = stepX > 0 ? stepY * dx0 / stepX : stepY;
+        // PERSPECTIVE ACROSS THE PLOTS. Drawn flat, three rows stepping
+        // right by the same amount do not read as parallel, so each plot
+        // left to right steps a little less (MULTI.PLOT_STEP_X). Only the
+        // sideways step: the rise and the plants' size are the same in all
+        // three, so the rows still match.
+        const plotK = ((MP.PLOT_STEP_X || [])[i] !== undefined) ? MP.PLOT_STEP_X[i] : 1;
+        const dx = dx0 * plotK;
+        // THE HEIGHT OF A PLANT DEPENDS ONLY ON HOW FAR BACK IT IS (k), never
+        // on which plot it is in: plants at the same depth stand on the same
+        // line across all three rows — the front ones level with each other,
+        // the back ones level with each other, and every one between too.
+        // That is what flat ground seen level looks like. Only the SIDEWAYS
+        // step differs per plot (PLOT_STEP_X).
+        // THE ROW'S REAL WIDTH, front plant's left edge to the back one's
+        // right — the back ones are smaller, and counting them at full
+        // size shrank the row more than it needed. FIT_SLACK lets the
+        // frames run a little past the column, since a plant's frame has
+        // empty margin either side of the plant itself.
+        const spanW = w * (shiftMax + 0.5 + (1 - (nMax - 1) * scStep) / 2);
+        const fitK = nMax > 1 && this.plotColW
+            ? Math.min(1, this.plotColW * (MP.FIT_SLACK !== undefined ? MP.FIT_SLACK : 1.1) / spanW)
+            : 1;
+        // Centred on that real extent, not on the plants' middles — with
+        // this plot's own step, which is narrower than the one it was
+        // sized by.
+        const realW = w * (shift * plotK + 0.5 + (1 - (n - 1) * scStep) / 2);
+        const left = cx - realW * fitK / 2;
+        const out = [];
+        for (let k = 0; k < n; k++) {
+            // EVERY OTHER PLANT MIRRORED (MULTI.ALTERNATE_FLIP), so a row
+            // of the same picture reads as a row of plants, not one copied.
+            const pflip = (MP.ALTERNATE_FLIP !== false && k % 2 === 1) ? !flip : flip;
+            const sk  = fitK * (1 - k * scStep);
+            // A LITTLE TALLER OR SHORTER, each plant its own — a row of
+            // identical heights reads as stamped out. From a hash of the
+            // plot, the place in the row and the level, not Math.random(),
+            // so the same field comes back the same after a relayout.
+            const jit = (this._cellHash(i, k, lvl) * 2 - 1)
+                      * (MP.HEIGHT_JITTER !== undefined ? MP.HEIGHT_JITTER : 0.08);
+            const pw  = w * sk, ph = h * sk * (1 + jit);
+            const px  = n > 1 ? left + w * fitK / 2 + k * dx * w * fitK : cx;
+            const pby = baseY - k * dy * h * fitK;
+            out.push({ pflip, sk, pw, ph, px, pby });
+        }
+        return out;
+    }
+
+    // ── ROW PREVIEW (a development tool) ─────────────────────────────────────
+    // CROPS.MULTI.STUMP_PREVIEW: a panel over the farm half with every plot's
+    // longest row laid out as stumps — COUNT to a plot, of CROP — exactly
+    // where _rowPlacement puts a real level's plants, so how the three rows
+    // line up can be judged without playing up to a level that has them.
+    // A line runs through each row's feet (GUIDES), which is what shows
+    // whether they read as parallel. Nothing on it does anything.
+    _showStumpPreview() {
+        const C  = CONFIG.CROPS || {};
+        const PV = (C.MULTI || {}).STUMP_PREVIEW || {};
+        if (this.stumpPreview && this.stumpPreview.scene) this.stumpPreview.destroy();
+        this.stumpPreview = null;
+        if (!PV.ENABLED || !this.farmRows) return;
+        const name = PV.CROP || 'tomato';
+        if (!this.textures.exists(`crop_${name}`)) return;
+        const B  = this.layoutConfig.partB;
+        const s  = this.layoutConfig.scale;
+        const ST = C.STUMP || {};
+        const box = this.cropBox || this._cropBox();
+        const f0  = this.textures.get(`crop_${name}`).get(0);
+        const k0  = Math.min(box.w / f0.width, box.h / f0.height);
+        const w = f0.width * k0, h = f0.height * k0;
+        const n = Math.max(1, PV.COUNT || ((C.DEPTH || {}).ROW_MAX || 10));
+        const keep  = Math.min(1, ST.KEEP > 0 ? ST.KEEP : 0.15);
+        const keepW = ST.KEEP_W > 0 ? Math.min(1, ST.KEEP_W) : 1;
+
+        const root = this.add.container(0, 0).setDepth(PV.DEPTH !== undefined ? PV.DEPTH : 60);
+        root.add(this.add.rectangle(B.x + B.width / 2, B.y + B.height / 2, B.width, B.height,
+            hexColor(CONFIG.BACKGROUND.GRADIENT_START_COLOR), PV.PANEL_ALPHA !== undefined ? PV.PANEL_ALPHA : 1));
+        const cols = PV.GUIDE_COLORS || [0xd0342c, 0x2c7bd0, 0x2ca24a];
+        this.farmRows.forEach((row, i) => {
+            const cx = row.cx, baseY = row.cy + box.h / 2;
+            const flip = (C.MIRROR_ROWS || [1]).indexOf(i) >= 0;
+            const place = this._rowPlacement(i, cx, baseY, w, h, n, n, flip, PV.LEVEL || 1);
+            // Back to front, so a nearer stump draws over the one behind it.
+            for (let k = place.length - 1; k >= 0; k--) {
+                const q = place[k];
+                const img = this.add.image(q.px, q.pby, `crop_${name}`, 0).setOrigin(0.5, 1)
+                    .setDisplaySize(q.pw, q.ph).setFlipX(q.pflip);
+                const fr = img.frame;
+                img.setCrop(fr.width * (1 - keepW) / 2, fr.height * (1 - keep), fr.width * keepW, fr.height * keep);
+                root.add(img);
+            }
+            if (PV.GUIDES !== false) {
+                const g = this.add.graphics();
+                g.lineStyle(Math.max(1, 1.5 * s), cols[i % cols.length], 0.9);
+                g.beginPath();
+                g.moveTo(place[0].px, place[0].pby);
+                for (const q of place) g.lineTo(q.px, q.pby);
+                g.strokePath();
+                g.fillStyle(cols[i % cols.length], 1);
+                for (const q of place) g.fillCircle(q.px, q.pby, Math.max(1.5, 2.5 * s));
+                root.add(g);
+            }
+            // LEVEL MARKS off the first row: a flat line from its front stump's
+            // foot and one from its back stump's, out to the half's right edge
+            // — so where every other row's feet fall against them can be read.
+            if (i === 0 && PV.LEVEL_LINES !== false) {
+                const g = this.add.graphics();
+                g.lineStyle(Math.max(1, 1.5 * s), PV.LEVEL_LINE_COLOR !== undefined ? PV.LEVEL_LINE_COLOR : 0x2b2013, 0.8);
+                for (const q of [place[0], place[place.length - 1]]) g.lineBetween(q.px, q.pby, B.x + B.width, q.pby);
+                root.add(g);
+            }
+        });
+        this.stumpPreview = root;
+    }
+
     // HOW MANY PLANTS A PLOT HOLDS on this level — CROPS.MULTI.COUNTS, the
     // last step at or below the level. One if the row is switched off.
     _plantsPerPlot(lvl) {
@@ -1668,58 +1853,15 @@ class GameScene extends Phaser.Scene {
             const MP = C.MULTI || {};
             // SPACED AND SIZED BY THE LONGEST ROW (nMax), so a shorter,
             // poorer plot's plants match the richest one's — it simply has
-            // fewer of them.
+            // fewer of them. Where each stands: _rowPlacement.
             const nMax = this._plantsPerPlot(lvl);
             const n    = this._plantsInPlot(lvl, i);
-            const stepX = MP.STEP_X !== undefined ? MP.STEP_X : 0.16;
-            const stepY = MP.STEP_Y !== undefined ? MP.STEP_Y : 0.07;
-            const scStep = MP.SCALE_STEP !== undefined ? MP.SCALE_STEP : 0.05;
-            // THE DIAGONAL, CAPPED: STEP_X per plant, but never more than
-            // SPAN_MAX plant-widths end to end — a long row packs its plants
-            // closer rather than being shrunk to fit a longer diagonal.
-            const shiftMax = Math.min((nMax - 1) * stepX,
-                                      MP.SPAN_MAX !== undefined ? MP.SPAN_MAX : 0.8);
-            const dx0 = nMax > 1 ? shiftMax / (nMax - 1) : 0;
-            const shift = dx0 * (n - 1);   // this row's own diagonal
-            const dy  = stepX > 0 ? stepY * dx0 / stepX : stepY;
-            // PERSPECTIVE ACROSS THE PLOTS. Drawn flat, three rows stepping
-            // right by the same amount do not read as parallel, so each plot
-            // left to right steps a little less (MULTI.PLOT_STEP_X). Only the
-            // sideways step: the rise and the plants' size are the same in all
-            // three, so the rows still match.
-            const plotK = ((MP.PLOT_STEP_X || [])[i] !== undefined) ? MP.PLOT_STEP_X[i] : 1;
-            const dx = dx0 * plotK;
-            // THE ROW'S REAL WIDTH, front plant's left edge to the back one's
-            // right — the back ones are smaller, and counting them at full
-            // size shrank the row more than it needed. FIT_SLACK lets the
-            // frames run a little past the column, since a plant's frame has
-            // empty margin either side of the plant itself.
-            const spanW = w * (shiftMax + 0.5 + (1 - (nMax - 1) * scStep) / 2);
-            const fitK = nMax > 1 && this.plotColW
-                ? Math.min(1, this.plotColW * (MP.FIT_SLACK !== undefined ? MP.FIT_SLACK : 1.1) / spanW)
-                : 1;
-            // Centred on that real extent, not on the plants' middles — with
-            // this plot's own step, which is narrower than the one it was
-            // sized by.
-            const realW = w * (shift * plotK + 0.5 + (1 - (n - 1) * scStep) / 2);
-            const left = cx - realW * fitK / 2;
+            const place = this._rowPlacement(i, cx, baseY, w, h, nMax, n, flip, lvl);
             const shares = this._splitPlot(yields[i], n);
             const plants = [];
             let end = 0;
             for (let k = 0; k < n; k++) {
-                // EVERY OTHER PLANT MIRRORED (MULTI.ALTERNATE_FLIP), so a row
-                // of the same picture reads as a row of plants, not one copied.
-                const pflip = (MP.ALTERNATE_FLIP !== false && k % 2 === 1) ? !flip : flip;
-                const sk  = fitK * (1 - k * scStep);
-                // A LITTLE TALLER OR SHORTER, each plant its own — a row of
-                // identical heights reads as stamped out. From a hash of the
-                // plot, the place in the row and the level, not Math.random(),
-                // so the same field comes back the same after a relayout.
-                const jit = (this._cellHash(i, k, lvl) * 2 - 1)
-                          * (MP.HEIGHT_JITTER !== undefined ? MP.HEIGHT_JITTER : 0.08);
-                const pw  = w * sk, ph = h * sk * (1 + jit);
-                const px  = n > 1 ? left + w * fitK / 2 + k * dx * w * fitK : cx;
-                const pby = baseY - k * dy * h * fitK;
+                const { pflip, pw, ph, px, pby } = place[k];
                 // Behind the one in front: each a hair lower in the stack.
                 const plant = this.add.image(px, pby, `crop_${name}`, 0)
                     .setDisplaySize(pw, ph).setOrigin(0.5, 1)
