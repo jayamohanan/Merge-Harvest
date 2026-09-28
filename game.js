@@ -582,6 +582,8 @@ class GameScene extends Phaser.Scene {
         this.buildCrops(this.cropLevel, false);
         this._makeFieldMini();
         this._showStumpPreview();
+        this._showCropPreview();
+        this._showFieldMapPreview();
         (this.crops || []).forEach((c, i) => this._restoreCrop(c, kept[i]));
         this._setFarmHarvested();
 
@@ -791,6 +793,8 @@ class GameScene extends Phaser.Scene {
         this.buildCrops();
         this._makeFieldMini();
         this._showStumpPreview();
+        this._showCropPreview();
+        this._showFieldMapPreview();
 
         // The merge half
         this.createGrid();
@@ -1704,6 +1708,187 @@ class GameScene extends Phaser.Scene {
             }
         });
         this.stumpPreview = root;
+    }
+
+    // ── CROP ROW VIEWER (a development tool) ─────────────────────────────────
+    // CROPS.MULTI.CROP_PREVIEW: a panel over the farm half with all three
+    // plots' rows standing as whole plants — COUNTS to a row, of CROP — where
+    // _rowPlacement puts a real level's, so a crop's full rows can be judged
+    // without playing up to them. A small HTML bar over the half's top left
+    // picks the crop and each row's count; the choice survives relayouts.
+    // Nothing on it touches the game's state, and the panel swallows taps.
+    _showCropPreview() {
+        const C  = CONFIG.CROPS || {};
+        const PV = (C.MULTI || {}).CROP_PREVIEW || {};
+        if (this.cropPreview && this.cropPreview.scene) this.cropPreview.destroy();
+        this.cropPreview = null;
+        const ui = document.getElementById('crop-preview-ui');
+        if (!PV.ENABLED || !this.farmRows || !this.layoutConfig) { if (ui) ui.remove(); return; }
+        const names = [...new Set(C.LEVELS || [])].filter((n) => this.textures.exists(`crop_${n}`));
+        if (!names.length) return;
+        const max = Math.max(1, (C.DEPTH || {}).ROW_MAX || 10);
+        const st = this._cropPreviewState || (this._cropPreviewState = {
+            crop:   names.indexOf(PV.CROP) >= 0 ? PV.CROP : names[0],
+            counts: [0, 1, 2].map((i) => {
+                const c = Array.isArray(PV.COUNTS) ? PV.COUNTS[i] : PV.COUNTS;
+                return Phaser.Math.Clamp(Math.round(c || 10), 1, max);
+            }),
+        });
+        const B = this.layoutConfig.partB;
+        const box = this.cropBox || this._cropBox();
+        const f0 = this.textures.get(`crop_${st.crop}`).get(0);
+        const k0 = Math.min(box.w / f0.width, box.h / f0.height);
+        const w = f0.width * k0, h = f0.height * k0;
+        const nMax = Math.max(...st.counts);
+
+        const root = this.add.container(0, 0).setDepth(PV.DEPTH !== undefined ? PV.DEPTH : 62);
+        root.add(this.add.rectangle(B.x + B.width / 2, B.y + B.height / 2, B.width, B.height,
+            hexColor(CONFIG.BACKGROUND.GRADIENT_START_COLOR), PV.PANEL_ALPHA !== undefined ? PV.PANEL_ALPHA : 1)
+            .setInteractive());
+        // Every plant of every row, back rows first and each row back to
+        // front — so nearer plants draw over those behind, as in play.
+        const all = [];
+        this.farmRows.forEach((row, i) => {
+            const n = st.counts[i] !== undefined ? st.counts[i] : st.counts[0];
+            const flip = (C.MIRROR_ROWS || [1]).indexOf(i) >= 0;
+            const place = this._rowPlacement(i, row.cx, row.cy + box.h / 2, w, h, nMax, n, flip, PV.LEVEL || 1);
+            place.forEach((q) => all.push(q));
+        });
+        all.sort((a, b) => a.pby - b.pby);
+        for (const q of all) {
+            root.add(this.add.image(q.px, q.pby, `crop_${st.crop}`, 0).setOrigin(0.5, 1)
+                .setDisplaySize(q.pw, q.ph).setFlipX(q.pflip));
+        }
+        this.cropPreview = root;
+
+        // THE BAR: a crop list and a count per row, in page pixels over the
+        // half's top left corner.
+        let bar = ui;
+        if (!bar) {
+            bar = document.createElement('div');
+            bar.id = 'crop-preview-ui';
+            bar.style.cssText = 'position:fixed;z-index:500;display:flex;gap:6px;align-items:center;'
+                + 'padding:4px 6px;background:rgba(40,28,16,0.85);color:#fff6e0;border-radius:6px;'
+                + 'font:12px sans-serif;touch-action:auto;';
+            const sel = document.createElement('select');
+            sel.id = 'crop-preview-crop';
+            bar.appendChild(sel);
+            for (let i = 0; i < 3; i++) {
+                const lab = document.createElement('label');
+                lab.textContent = `R${i + 1}`;
+                const inp = document.createElement('input');
+                inp.type = 'number'; inp.min = '1'; inp.max = String(max);
+                inp.className = 'crop-preview-count';
+                inp.style.width = '3.2em';
+                lab.appendChild(inp);
+                bar.appendChild(lab);
+            }
+            document.body.appendChild(bar);
+            bar.addEventListener('change', () => {
+                const s2 = this._cropPreviewState;
+                s2.crop = bar.querySelector('select').value;
+                bar.querySelectorAll('input').forEach((inp, i) => {
+                    s2.counts[i] = Phaser.Math.Clamp(Math.round(Number(inp.value) || 1), 1, max);
+                    inp.value = s2.counts[i];
+                });
+                this._showCropPreview();
+            });
+            // Taps on the bar are the bar's, not the game's.
+            for (const ev of ['pointerdown', 'touchstart', 'mousedown']) bar.addEventListener(ev, (e) => e.stopPropagation());
+        }
+        const sel = bar.querySelector('select');
+        if (sel.options.length !== names.length) {
+            sel.innerHTML = '';
+            for (const n of names) {
+                const o = document.createElement('option');
+                o.value = n; o.textContent = this._cropTitle(n);
+                sel.appendChild(o);
+            }
+        }
+        sel.value = st.crop;
+        bar.querySelectorAll('input').forEach((inp, i) => { inp.value = st.counts[i]; });
+        const cr = this.game.canvas.getBoundingClientRect();
+        const kx = cr.width / this.scale.width, ky = cr.height / this.scale.height;
+        bar.style.left = Math.round(cr.left + (B.x + 8) * kx) + 'px';
+        bar.style.top  = Math.round(cr.top + (B.y + 8) * ky) + 'px';
+    }
+
+    // ── FIELD MAP VIEWER (a development tool) ────────────────────────────────
+    // FIELD_MAP.PREVIEW: every section's card, one at a time, built exactly as
+    // the game builds it (_buildFieldMap) and put where the game puts it
+    // (_fieldMiniRect) — so any section's layout can be looked at without
+    // playing up to it. ‹ › (or the arrow keys) step through them. A panel
+    // hides the farm info and crop behind it, and swallows taps; nothing on it
+    // touches the game's state. Rebuilt with every layout, keeping its place.
+    _showFieldMapPreview() {
+        const PV = (CONFIG.FIELD_MAP || {}).PREVIEW || {};
+        if (this.fieldPreview) {
+            if (this.fieldPreview.card && this.fieldPreview.card.box.scene) this.fieldPreview.card.box.destroy();
+            if (this.fieldPreview.root && this.fieldPreview.root.scene) this.fieldPreview.root.destroy();
+        }
+        this.fieldPreview = null;
+        if (!PV.ENABLED || !this.layoutConfig) return;
+        const sections = Math.ceil(CROP_VALUES.length / 5);
+        if (sections < 1) return;
+        const B = this.layoutConfig.partB;
+        const s = this.layoutConfig.scale;
+        const depth = PV.DEPTH !== undefined ? PV.DEPTH : 60;
+        const card = this._fieldMiniRect();
+        const at = Phaser.Math.Clamp(this._fieldPreviewAt || 0, 0, sections - 1);
+        this._fieldPreviewAt = at;
+
+        const root = this.add.container(0, 0).setDepth(depth);
+        // THE PANEL: from the half's top down to the card's foot — the farm
+        // info and the crop, as the game has them gone while a card is up.
+        const bottom = card.y + card.h;
+        root.add(this.add.rectangle(B.x + B.width / 2, (B.y + bottom) / 2, B.width, bottom - B.y,
+            hexColor(CONFIG.BACKGROUND.GRADIENT_START_COLOR), 1).setInteractive());
+
+        const style = {
+            fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
+            color: '#fff6e0', stroke: '#3b2a17', strokeThickness: Math.max(1, Math.round(3 * s)),
+        };
+        const first = at * 5 + 1, last = Math.min(first + 4, CROP_VALUES.length);
+        const LY = (CONFIG.FIELD_MAP || {}).LAYOUTS || {};
+        const kind = (LY.BY_SECTION || {})[at + 1] || LY.DEFAULT || 'voronoi';
+        const midY = (B.y + card.y) / 2;
+        const label = this.add.text(B.x + B.width / 2, midY,
+            `Section ${at + 1}/${sections} · Levels ${first}–${last} · ${kind}`,
+            { ...style, fontSize: Math.round(18 * s) + 'px' }).setOrigin(0.5);
+        root.add(label);
+        const step = (d) => {
+            this._fieldPreviewAt = (at + d + sections) % sections;
+            this._showFieldMapPreview();
+        };
+        for (const [d, ch, x] of [[-1, '‹', card.x + 16 * s], [1, '›', card.x + card.w - 16 * s]]) {
+            const b = this.add.text(x, midY, ch, { ...style, fontSize: Math.round(44 * s) + 'px' })
+                .setOrigin(0.5).setPadding(10 * s, 0, 10 * s, 0)
+                .setInteractive({ useHandCursor: true });
+            b.on('pointerdown', (p, lx, ly, e) => { if (e) e.stopPropagation(); step(d); });
+            root.add(b);
+        }
+        if (!this._fieldPreviewKeys && this.input && this.input.keyboard) {
+            this._fieldPreviewKeys = true;
+            this.input.keyboard.on('keydown', (e) => {
+                if (!this.fieldPreview || !this.fieldPreview.step) return;
+                if (e.key === 'ArrowLeft')  this.fieldPreview.step(-1);
+                if (e.key === 'ArrowRight') this.fieldPreview.step(1);
+            });
+        }
+
+        // THE CARD, as the game builds it. VIEW 'open': every field unshaded
+        // and wearing its crop; 'start': as the section opens in play — its
+        // first field current and wearing its crop, the rest under the shade.
+        const map = this._buildFieldMap(at, first);
+        map.box.setDepth(depth + 1);
+        if (PV.VIEW === 'start') {
+            map.setCurrent(first);
+            map.showIcon(first, false);
+        } else {
+            map.setCurrent(last);
+            for (let l = first; l <= last; l++) map.showIcon(l, false);
+        }
+        this.fieldPreview = { root, card: map, step };
     }
 
     // HOW MANY PLANTS A PLOT HOLDS on this level — CROPS.MULTI.COUNTS, the

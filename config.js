@@ -767,6 +767,15 @@ var CONFIG = {
         // or the file named here where it differs from the crop's name.
         ICON_DIR:   'graphics/crop/icon/',
         ICON_FILES: { 'chilly-pepper': 'chilly' },
+        // PREVIEW ONLY: every section's card, one at a time, where the game
+        // shows it — ‹ › or the arrow keys to step through. Covers the farm
+        // info and crop; does nothing. ENABLED: false to play.
+        PREVIEW: {
+            ENABLED: true,
+            VIEW:    'open',          // 'open' — every field unshaded, all crops
+                                      // shown; 'start' — as the section opens in play
+            DEPTH:   60,
+        },
         // ── HOW EACH SECTION'S FIELDS ARE LAID OUT ────────────────────────
         // 'treemap' — squarified rectangles; 'angled' — tilted straight cuts,
         // quadrilaterals and wedges (CUTS, _angledCuts); 'voronoi' — each
@@ -1241,6 +1250,18 @@ var CONFIG = {
                 LEVEL_LINE_COLOR: 0x2b2013,
                 PANEL_ALPHA: 1,
                 DEPTH:       60,
+            },
+            // PREVIEW ONLY: a panel over the farm half with all three rows
+            // standing as whole plants of CROP, COUNTS to a row, where a real
+            // level would stand them. A bar at its top left changes the crop
+            // and each row's count live. Covers the field; does nothing.
+            // ENABLED: false to play (the build turns it off regardless).
+            CROP_PREVIEW: {
+                ENABLED:     true,
+                CROP:        'tomato',
+                COUNTS:      [10, 10, 10],   // plot 1, 2, 3 — at most DEPTH.ROW_MAX
+                PANEL_ALPHA: 1,
+                DEPTH:       62,
             },
             PER_PLANT_FIGURE: false,
             STEP_X:     0.20,   // each plant behind: this × a plant's width right…
