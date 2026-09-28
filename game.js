@@ -1366,7 +1366,7 @@ class GameScene extends Phaser.Scene {
         // figure sits on the same line rather than floating at its top.
         const fill = (str) => str.replace('{n}', Math.floor(lvl))
             .replace('{total}', CROP_VALUES.length).replace('{crop}', title);
-        const fmt   = F.NAME_FORMAT || 'Level {n}/{total}. {crop} Farm';
+        const fmt   = F.NAME_FORMAT || 'Level {n}/{total}. {crop} Field';
         const cut   = fmt.indexOf('/{total}');
         const parts = cut < 0 ? [[fmt, 1]]
             : [[fmt.slice(0, cut), 1], ['/{total}', F.TOTAL_FRAC !== undefined ? F.TOTAL_FRAC : 0.7],
@@ -3009,15 +3009,21 @@ class GameScene extends Phaser.Scene {
         const info = this.farmInfo && this.farmInfo.scene ? this.farmInfo : null;
         if (info) { this.tweens.killTweensOf(info); this.tweens.add({ targets: info, alpha: 0, duration: inMs }); }
         later(inMs, () => map.harvestAll(finished));
-        if (next > last) { later(inMs + sweep, () => hide(map)); return; }
+        // The very last level closes the run's last section: its celebration,
+        // with nothing after it to reveal.
+        if (next > last) {
+            later(inMs + sweep, () => this._celebrateSection(map, null, () => hide(map)));
+            return;
+        }
         // Mid-batch: the shade lifts off the next field and its number leads.
         if (batchOf(next) === map.batch) {
             later(inMs + sweep, () => { if (map.box.scene) map.unlock(next); hide(map); });
             return;
         }
-        // THE LAST OF FIVE: once its field is swept, the card gives way to the
+        // THE LAST OF FIVE: once its field is swept, THE SECTION IS CELEBRATED
+        // (_celebrateSection) — and only then does the card give way to the
         // next batch's, which is read for a beat and then goes.
-        later(inMs + sweep, () => {
+        later(inMs + sweep, () => this._celebrateSection(map, batchOf(next), () => {
             // The new card comes up with ALL its fields shaded, and its first
             // is then unlocked, the same as any other.
             const fresh = this._buildFieldMap(batchOf(next), next);
@@ -3027,8 +3033,157 @@ class GameScene extends Phaser.Scene {
             this.tweens.add({ targets: map.box, alpha: 0, duration: swapMs,
                 onComplete: () => { if (map.box.scene) map.box.destroy(); } });
             this.tweens.add({ targets: fresh.box, alpha: 1, duration: swapMs });
-            later(swapMs, () => { if (fresh.box.scene) fresh.unlock(next); hide(fresh); });
+            // THE NEW SECTION INTRODUCES ITSELF before its first field opens:
+            // "Fields 6–10", and under it its crops, counting up from the
+            // last section's total to its own.
+            later(swapMs, () => this._introSection(fresh, map.batch, () => {
+                if (fresh.box.scene) fresh.unlock(next);
+                hide(fresh);
+            }));
+        }));
+    }
+
+    // ── A SECTION COMPLETE ───────────────────────────────────────────────────
+    // Five levels done — the run's big milestone, over the finished card:
+    //   1. THE WAVE: the five crop icons swell one after another.
+    //   2. THE STAMP: "Fields 1–5 Completed!" slams onto the card, a small
+    //      shake and a puff of dust with it.
+    //   3. THE BONUS: coins shower out of the card to the counter, the figure
+    //      over them — BONUS_FRAC of what the section's five levels held.
+    // Then everything it put up goes, and `then` carries on — to the next
+    // card, which introduces itself (_introSection). The merge grid
+    // stays playable throughout. See FIELD_MAP.SECTION.
+    _celebrateSection(map, nextBatch, then) {
+        const M  = CONFIG.FIELD_MAP || {};
+        const SC = M.SECTION || {};
+        if (SC.ENABLED === false || !map || !map.box.scene) { then(); return; }
+        const s = this.layoutConfig.scale;
+        const r = this._fieldMiniRect();
+        const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+        const later = (ms, fn) => this.time.delayedCall(ms, fn);
+        const made = [];                                // torn down at the end
+        const depth = SC.DEPTH !== undefined ? SC.DEPTH : 12;
+        const CC = CONFIG.COIN_COUNTER || {};
+        const levelsOf = (b) => { const a = []; for (let l = b * 5 + 1; l <= b * 5 + 5 && l <= CROP_VALUES.length; l++) a.push(l); return a; };
+        const totalOf = (b) => levelsOf(b).reduce((sum, l) => sum + cropValuesFor(l).reduce((x, v) => x + v, 0), 0);
+
+        // 1. THE WAVE.
+        const waveMs = map.wave();
+
+        // 2. THE STAMP — a bordered tag, tilted, slammed down from big.
+        const stampAt = waveMs;
+        later(stampAt, () => {
+            const fs = Math.round(Math.min(r.w * 0.075, (SC.STAMP_SIZE !== undefined ? SC.STAMP_SIZE : 40) * s));
+            const txt = this.add.text(0, 0, `${this._sectionName(map.batch)} Completed!`, {
+                fontSize: fs + 'px', fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
+                color: SC.STAMP_COLOR || '#fff6e0', stroke: SC.STAMP_EDGE || '#6e2a1c',
+                strokeThickness: Math.max(3, Math.round(fs * 0.14)),
+            }).setOrigin(0.5);
+            const padX = fs * 0.6, padY = fs * 0.35;
+            const bw = txt.width + padX * 2, bh = txt.height + padY * 2;
+            const tag = this.add.graphics();
+            tag.fillStyle(hexColor(SC.STAMP_FILL || '#b5452f'), 1).fillRoundedRect(-bw / 2, -bh / 2, bw, bh, fs * 0.25);
+            tag.lineStyle(Math.max(2, fs * 0.08), hexColor(SC.STAMP_EDGE || '#6e2a1c'), 1)
+                .strokeRoundedRect(-bw / 2, -bh / 2, bw, bh, fs * 0.25);
+            const stamp = this.add.container(cx, cy - r.h * 0.12, [tag, txt]).setDepth(depth)
+                .setAngle(SC.STAMP_TILT !== undefined ? SC.STAMP_TILT : -6).setScale(2.2).setAlpha(0);
+            made.push(stamp);
+            this.tweens.add({ targets: stamp, scale: 1, alpha: 1, duration: 200, ease: 'Quad.easeIn',
+                onComplete: () => {
+                    if (SC.SHAKE !== false) this.cameras.main.shake(140, 0.004);
+                    const puff = this.add.particles(stamp.x, stamp.y + bh * 0.4, this._puffTexture(), {
+                        lifespan: { min: 380, max: 600 }, speed: { min: 40 * s, max: 120 * s },
+                        angle: { min: 150, max: 390 }, scale: { start: 0.25 * s, end: 0.7 * s },
+                        alpha: { start: 0.7, end: 0 }, tint: [0xf3e6cc, 0xe2cfaa, 0xcdb58c], emitting: false,
+                    }).setDepth(depth - 0.5);
+                    puff.explode(12);
+                    later(700, () => { if (puff.scene) puff.destroy(); });
+                } });
         });
+
+        // 3. THE BONUS.
+        const bonusAt = stampAt + (SC.STAMP_HOLD_MS !== undefined ? SC.STAMP_HOLD_MS : 600);
+        const bonus = Math.max(1, Math.round(totalOf(map.batch)
+            * (SC.BONUS_FRAC !== undefined ? SC.BONUS_FRAC : 0.25)
+            * (((CONFIG.CROPS || {}).PIGGY || {}).PAYOUT_MULT !== undefined ? CONFIG.CROPS.PIGGY.PAYOUT_MULT : 1)));
+        later(bonusAt, () => {
+            const fs = Math.round((SC.BONUS_SIZE !== undefined ? SC.BONUS_SIZE : 44) * s);
+            const fig = this.add.text(cx, cy + r.h * 0.08, `+${this._bigNum(bonus)}`, {
+                fontSize: fs + 'px', fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
+                color: CC.TEXT_COLOR || '#f7ca42', stroke: CC.TEXT_STROKE_COLOR || '#7e5d11',
+                strokeThickness: Math.max(3, Math.round(fs * 0.12)),
+            }).setOrigin(0.5).setDepth(depth).setScale(0.4).setAlpha(0);
+            made.push(fig);
+            this.tweens.add({ targets: fig, scale: 1, alpha: 1, duration: 260, ease: 'Back.easeOut' });
+            this.animateCoinReward(cx, cy, bonus, 0, null, null);
+        });
+
+        const endAt = bonusAt + (SC.BONUS_HOLD_MS !== undefined ? SC.BONUS_HOLD_MS : 1400);
+
+        // THE END: everything it put up fades, and the run carries on.
+        later(endAt, () => {
+            const live = made.filter((o) => o && o.scene);
+            if (!live.length) { then(); return; }
+            this.tweens.add({ targets: live, alpha: 0, duration: 260,
+                onComplete: () => { for (const o of live) if (o.scene) o.destroy(); } });
+            later(260, then);
+        });
+    }
+
+    // A NEW SECTION'S CARD, UP AND ALL SHADED: its name over it — "Fields
+    // 6–10" — and under that "N crops", N counting from the previous
+    // section's total up to this one's, so the jump in size is watched
+    // happening. Then it clears and `then` unlocks the first field.
+    _introSection(map, prevBatch, then) {
+        const SC = (CONFIG.FIELD_MAP || {}).SECTION || {};
+        const I  = SC.INTRO || {};
+        if (I.ENABLED === false || !map || !map.box.scene) { then(); return; }
+        const s = this.layoutConfig.scale;
+        const r = this._fieldMiniRect();
+        const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+        const depth = SC.DEPTH !== undefined ? SC.DEPTH : 12;
+        const totalOf = (b) => {
+            let sum = 0;
+            for (let l = b * 5 + 1; l <= b * 5 + 5 && l <= CROP_VALUES.length; l++)
+                sum += cropValuesFor(l).reduce((x, v) => x + v, 0);
+            return sum;
+        };
+        const style = (size, color, edge) => ({
+            fontSize: Math.round(size * s) + 'px', fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
+            color, stroke: edge, strokeThickness: Math.max(2, Math.round(size * s * 0.13)),
+        });
+        const title = this.add.text(cx, cy - 6 * s, this._sectionName(map.batch),
+            style(I.TITLE_SIZE !== undefined ? I.TITLE_SIZE : 38, I.TITLE_COLOR || '#fff6e0', I.EDGE || '#3b2a17'))
+            .setOrigin(0.5, 1).setDepth(depth).setAlpha(0);
+        const from = totalOf(prevBatch), to = totalOf(map.batch);
+        const count = this.add.text(cx, cy + 6 * s, `${this._bigNum(from)} crops`,
+            style(I.COUNT_SIZE !== undefined ? I.COUNT_SIZE : 30, I.COUNT_COLOR || '#e8f5c8', I.EDGE || '#3b2a17'))
+            .setOrigin(0.5, 0).setDepth(depth).setAlpha(0);
+        for (const o of [title, count]) if (o.width > r.w * 0.94) o.setScale((r.w * 0.94) / o.width);
+        this.tweens.add({ targets: [title, count], alpha: 1, duration: 240 });
+        const n = { v: from };
+        const countMs = I.COUNT_MS !== undefined ? I.COUNT_MS : 1400;
+        this.tweens.add({ targets: n, v: to, delay: 300, duration: countMs, ease: 'Cubic.easeOut',
+            onUpdate: () => { if (count.scene) count.setText(`${this._bigNum(Math.round(n.v))} crops`); },
+            onComplete: () => {
+                if (!count.scene) return;
+                count.setText(`${this._bigNum(to)} crops`);
+                // Landed: the figure knocks once, like the coin counter does.
+                const b = count.scaleX;
+                this.tweens.add({ targets: count, scale: b * 1.12, duration: 120, yoyo: true });
+            } });
+        this.time.delayedCall(300 + countMs + (I.HOLD_MS !== undefined ? I.HOLD_MS : 700), () => {
+            this.tweens.add({ targets: [title, count], alpha: 0, duration: 240,
+                onComplete: () => { title.destroy(); count.destroy(); } });
+            this.time.delayedCall(240, then);
+        });
+    }
+
+    // A section, by its fields' numbers: "Fields 1–5". Plain numbers rather
+    // than place names — they say at a glance where in the run it is.
+    _sectionName(batch) {
+        const a = batch * 5 + 1, b = Math.min(CROP_VALUES.length, a + 4);
+        return `Fields ${a}–${b}`;
     }
 
     // THE FIELD MAP'S PLANTS: BLOCKS, NOT LEAVES. Each is a green square (or
@@ -3612,6 +3767,26 @@ class GameScene extends Phaser.Scene {
                 tick.setScale(0);
                 this.tweens.add({ targets: tick, scale: sc,
                     duration: D.TICK_MS !== undefined ? D.TICK_MS : 300, ease: 'Back.easeOut' });
+            },
+            // THE WAVE: every field's crop icon (with its name and tick)
+            // swelling in turn, level by level — a section's applause. Returns
+            // how long it runs.
+            wave: () => {
+                const W = ((M.SECTION || {}).WAVE) || {};
+                const gap = W.STAGGER_MS !== undefined ? W.STAGGER_MS : 130;
+                const ms  = W.MS !== undefined ? W.MS : 240;
+                const k   = W.SCALE !== undefined ? W.SCALE : 1.25;
+                const list = Object.values(fields).sort((a, b) => a.lvl - b.lvl);
+                list.forEach((f, i) => {
+                    for (const o of [f.icon, f.iconName, f.tick]) {
+                        if (!o || !o.scene) continue;
+                        const bx = o.scaleX, by = o.scaleY;
+                        this.tweens.add({ targets: o, scaleX: bx * k, scaleY: by * k, duration: ms,
+                            delay: i * gap, yoyo: true, ease: 'Sine.easeInOut',
+                            onComplete: () => { if (o.scene) o.setScale(bx, by); } });
+                    }
+                });
+                return (list.length - 1) * gap + ms * 2;
             },
             // A FIELD UNLOCKED: the shade over it lifts — faded off, not
             // snapped — and a puff of dust bursts up out of it, as if

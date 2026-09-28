@@ -767,6 +767,39 @@ var CONFIG = {
         // or the file named here where it differs from the crop's name.
         ICON_DIR:   'graphics/crop/icon/',
         ICON_FILES: { 'chilly-pepper': 'chilly' },
+        // ── A SECTION COMPLETE (every fifth level) ─────────────────────────
+        // The icons wave, "Fields 1–5 Completed!" is stamped on the card, a
+        // bonus showers to the counter (BONUS_FRAC of the five levels' crops,
+        // at the banks' PAYOUT_MULT) — then the next card, which introduces
+        // itself (INTRO). See _celebrateSection / _introSection.
+        SECTION: {
+            ENABLED:  true,
+            WAVE:     { STAGGER_MS: 130, MS: 240, SCALE: 1.25 },
+            STAMP_SIZE:  40,          // px @ design (never past 7.5% of the card's width)
+            STAMP_TILT:  -6,          // degrees
+            STAMP_FILL:  '#b5452f',
+            STAMP_EDGE:  '#6e2a1c',
+            STAMP_COLOR: '#fff6e0',
+            STAMP_HOLD_MS: 600,       // stamped, before the bonus
+            SHAKE:       true,        // a small screen shake as it lands
+            BONUS_FRAC:  0.25,
+            BONUS_SIZE:  44,
+            BONUS_HOLD_MS: 1400,      // the shower, before the next card
+            // THE NEXT CARD INTRODUCED, shaded, before its first field opens:
+            // "Fields 6–10" and, under it, "N crops" counting from the last
+            // section's total up to its own.
+            INTRO: {
+                ENABLED:     true,
+                TITLE_SIZE:  38,
+                COUNT_SIZE:  30,
+                TITLE_COLOR: '#fff6e0',
+                COUNT_COLOR: '#e8f5c8',
+                EDGE:        '#3b2a17',
+                COUNT_MS:    1400,
+                HOLD_MS:     700,     // the final figure read, before the unlock
+            },
+            DEPTH:       12,
+        },
         // THE CARD: the crops' whole plot, between levels.
         MINI: {
             PAD:        24,    // px @ design, in from the half's left and right
@@ -861,7 +894,7 @@ var CONFIG = {
         AREA_SIZE: 18,
         LINE_GAP:  0,           // extra space between the two lines
         TOTAL_FRAC:  0.7,           // "/{total}" at this fraction of NAME_SIZE
-        NAME_FORMAT: 'Level {n}/{total}. {crop} Farm',   // {n} = level, {total} = how
+        NAME_FORMAT: 'Level {n}/{total}. {crop} Field',   // {n} = level, {total} = how
                                     // many levels (CROP_VALUES rows), {crop} = name
         COUNT_PREFIX: 'Crops harvested: ',  // the line above the area, read
                                     // as n/m: crops picked so far this level
