@@ -1255,7 +1255,7 @@ var CONFIG = {
             // standing as whole plants of CROP, COUNTS to a row, where a real
             // level would stand them. A bar at its top left changes the crop
             // and each row's count live. Covers the field; does nothing.
-            // ENABLED: false to play (the build turns it off regardless).
+            // ENABLED: false to play.
             CROP_PREVIEW: {
                 ENABLED:     true,
                 CROP:        'tomato',

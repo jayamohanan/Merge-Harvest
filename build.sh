@@ -48,23 +48,6 @@ rsync -a \
   --exclude '/graphics/ui/piggy_bank2.png' \
   ./ "$OUT/"
 
-# ── NO DEBUG OVERLAYS IN THE BUILD ─────────────────────────────────────────────
-# The development viewers — the stump rows, the crop rows and the field maps —
-# cover the farm and are switched on in config.js while being used. Forgetting
-# to switch one off before building would ship it. So the BUILD COPY of
-# config.js gets a line at its end that turns every one of them off (and the
-# forced plant count back to the real game's), whatever the source says. The
-# source file is never touched.
-cat >> "$OUT/config.js" <<'EOF'
-
-;(function () {
-    const M = (CONFIG.CROPS || {}).MULTI || {};
-    const F = CONFIG.FIELD_MAP || {};
-    for (const P of [M.STUMP_PREVIEW, M.CROP_PREVIEW, F.PREVIEW]) if (P) P.ENABLED = false;
-    M.DEBUG_COUNT = null;
-})();
-EOF
-
 # ── START THE OPENING ART WITH THE PAGE ────────────────────────────────────────
 # Without this, loading runs in rounds, each waiting on the server: the page,
 # then the scripts, then — only once game.js has arrived and run — the art. The
