@@ -767,20 +767,34 @@ var CONFIG = {
         // or the file named here where it differs from the crop's name.
         ICON_DIR:   'graphics/crop/icon/',
         ICON_FILES: { 'chilly-pepper': 'chilly' },
-        // ── ANGLED FIELDS ─────────────────────────────────────────────────
-        // From FROM_SECTION on, a card is split by tilted straight cuts into
-        // quadrilaterals and wedges — farmland from the air — instead of the
-        // squarified rectangles section 1 keeps. Areas still follow the crops.
-        // See _angledCuts.
+        // ── HOW EACH SECTION'S FIELDS ARE LAID OUT ────────────────────────
+        // 'treemap' — squarified rectangles; 'angled' — tilted straight cuts,
+        // quadrilaterals and wedges (CUTS, _angledCuts); 'voronoi' — each
+        // field grown around a seeded point, irregular plots (VORONOI,
+        // _voronoiFields). Sections are 1-based (section 1 = levels 1–5); any
+        // not listed takes DEFAULT. Every section's layout is seeded by its
+        // number, so two sections of the same kind still come out different.
+        LAYOUTS: {
+            DEFAULT: 'voronoi',
+            BY_SECTION: { 1: 'treemap', 2: 'angled', 3: 'angled', 8: 'angled' },
+        },
         CUTS: {
-            ENABLED:       true,
-            FROM_SECTION:  2,         // 1-based: section 1 (levels 1–5) stays rectangles
             ANGLE_MIN_DEG: 10,        // each cut's tilt off straight, either way
             ANGLE_MAX_DEG: 35,
             SPLIT_MIN:     0.3,       // a cut's smaller side takes at least this share
             MIN_ROUNDNESS: 0.042,     // no field thinner than this (area ÷ perimeter²:
                                       // square 0.0625, 4:1 strip 0.04); retried if so
             TRIES:         12,        // layouts tried before the straight-cut fallback
+        },
+        VORONOI: {
+            RELAX_ITERS:    12,       // rounds the points drift to their fields' middles…
+            RELAX:          0.5,      // …moving this share of the way each round:
+                                      // more — rounder, more alike; 0 — wilder shapes
+            ITERATIONS:     200,      // most rounds spent fitting the areas
+            AREA_TOLERANCE: 0.01,     // each field within 1% of its share
+            MIN_ROUNDNESS:  0.042,    // no field thinner than this (area ÷ perimeter²:
+                                      // square 0.0625, 4:1 strip 0.04)
+            TRIES:          6,        // seeds tried for a layout meeting both
         },
         // ── A SECTION COMPLETE (every fifth level) ─────────────────────────
         // The icons wave, "Fields 1–5 Completed!" is stamped on the card, a

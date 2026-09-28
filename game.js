@@ -3552,18 +3552,22 @@ class GameScene extends Phaser.Scene {
         // the same corner twice running.
         const weights = levels.map((l) => Math.sqrt(cropValuesFor(l).reduce((a, v) => a + v, 0)));
         const flipT = batch % 2 === 1, flipX = (batch >> 1) % 2 === 1, flipY = (batch >> 2) % 2 === 1;
-        // FROM SECTION CUTS.FROM_SECTION ON, ANGLED CUTS instead: the card
-        // split by tilted straight lines into quadrilaterals and wedges, a
-        // patchwork no two sections share (_angledCuts). Each field is then a
-        // polygon, and `rects` stays null.
-        const CU = M.CUTS || {};
-        const angled = CU.ENABLED !== false && batch + 1 >= (CU.FROM_SECTION !== undefined ? CU.FROM_SECTION : 2);
+        // WHICH LAYOUT THIS SECTION GETS — FIELD_MAP.LAYOUTS: the squarified
+        // rectangles; ANGLED cuts, tilted straight lines into quadrilaterals
+        // and wedges (_angledCuts); or a weighted VORONOI, each field grown
+        // around a seeded point into an irregular plot (_voronoiFields). Both
+        // of the last make each field a polygon, and `rects` stays null.
+        const LY = M.LAYOUTS || {};
+        const kind = (LY.BY_SECTION || {})[batch + 1] || LY.DEFAULT || 'voronoi';
+        const box4 = [
+            { x: area.x, y: area.y }, { x: area.x + area.w, y: area.y },
+            { x: area.x + area.w, y: area.y + area.h }, { x: area.x, y: area.y + area.h },
+        ];
         let rects = null, polys;
-        if (angled) {
-            polys = this._angledCuts(weights, [
-                { x: area.x, y: area.y }, { x: area.x + area.w, y: area.y },
-                { x: area.x + area.w, y: area.y + area.h }, { x: area.x, y: area.y + area.h },
-            ], batch, CU);
+        if (kind === 'angled') {
+            polys = this._angledCuts(weights, box4, batch, M.CUTS || {});
+        } else if (kind === 'voronoi') {
+            polys = this._voronoiFields(weights, area, batch, M.VORONOI || {});
         } else {
             const W = flipT ? area.h : area.w, H = flipT ? area.w : area.h;
             rects = this._squarify(weights, W, H).map((r) => {
@@ -3684,7 +3688,7 @@ class GameScene extends Phaser.Scene {
         levels.forEach((lvl, i) => {
             const P = polys[i];
             // The field's room — its cell less half the strip all round. A
-            // rectangle, simply shrunk; an angled field, each side pushed in.
+            // rectangle, simply shrunk; a Voronoi field, each side pushed in.
             let x, y, w, h, ip = null, dir = null;
             if (rects) {
                 const r = rects[i];
@@ -3696,7 +3700,7 @@ class GameScene extends Phaser.Scene {
             }
             const name = this._cropForLevel(lvl);
             // `cell`: where the icon, the puff and the like go — the rect
-            // itself, or the biggest box an angled field holds.
+            // itself, or the biggest box a Voronoi field holds.
             const f = { lvl, cv: null, ctx: null, x, y, res, plants: [], order: [], cleared: 0,
                         poly: P, cell: rects ? rects[i] : this._polyInnerRect(P) };
             const done = lvl < doneBelow;
@@ -3714,7 +3718,7 @@ class GameScene extends Phaser.Scene {
                     else       furrow(v, y + rad * 0.6, v, y + h - rad * 0.6, seed);
                 });
             } else {
-                // AN ANGLED FIELD'S ROWS run parallel to its longest side, as
+                // A VORONOI FIELD'S ROWS run parallel to its longest side, as
                 // a field is ploughed along its longest edge; each row spans
                 // the field wall to wall, and the whole is clipped to its shape.
                 let ux = 1, uy = 0, longest = -1;
@@ -3787,7 +3791,7 @@ class GameScene extends Phaser.Scene {
                     const cw = Math.max(1, Math.ceil(w * res)), ch = Math.max(1, Math.ceil(h * res));
                     f.cv = this.textures.createCanvas(key, cw, ch);
                     f.ctx = f.cv.getContext();
-                    // An angled field's crop stops at its own edges, as a
+                    // A Voronoi field's crop stops at its own edges, as a
                     // rectangle's does at its image's.
                     if (ip) {
                         f.ctx.save();
@@ -3813,7 +3817,7 @@ class GameScene extends Phaser.Scene {
                     // turned — so the bare ground opens up from one side. Only
                     // a hair of jitter (MINI.SWEEP_JITTER), so the front is a
                     // line and not a ruler's edge.
-                    // An angled field runs along its rows, from an end the
+                    // A Voronoi field runs along its rows, from an end the
                     // seed picks.
                     const back = dir ? this._cellHash(batch, lvl, 223) < 0.5 : (along ? flipX : flipY);
                     const jit2 = MI.SWEEP_JITTER !== undefined ? MI.SWEEP_JITTER : 0.04;
@@ -3837,7 +3841,7 @@ class GameScene extends Phaser.Scene {
                 strokeThickness: Math.max(1, Math.round(2.5 * s / kc)),
             }).setOrigin(0, 0);
             if (ip) {
-                // AN ANGLED FIELD: fitted to the biggest box it holds, then
+                // A VORONOI FIELD: fitted to the biggest box it holds, then
                 // slid from there towards its top-left for as far as it still
                 // fits — into the corner, where a rectangle's number sits.
                 const room = this._polyInnerRect(ip);
@@ -4241,6 +4245,105 @@ class GameScene extends Phaser.Scene {
         return best;
     }
 
+    // WEIGHTED VORONOI (a power diagram) of the box r among `values`: one
+    // seeded point per field, spread out, and each field every spot nearer
+    // its point than any other's, less a weight of its own. The weights are
+    // then worked until every field has its share of the area (to within
+    // AREA_TOLERANCE), and for the first RELAX_ITERS rounds the points also
+    // drift part way to their fields' middles (RELAX) — rounder, more even
+    // plots, but not so far that every section settles into the same one.
+    // Several seeds are tried (TRIES) and the one with the truest areas and
+    // no field thinner than MIN_ROUNDNESS kept. Returns one convex polygon
+    // per value, in the order given. Stable per `seed`.
+    _voronoiFields(values, r, seed, C) {
+        const iters  = C.ITERATIONS !== undefined ? C.ITERATIONS : 200;
+        const relaxN = C.RELAX_ITERS !== undefined ? C.RELAX_ITERS : 12;
+        const relax  = C.RELAX !== undefined ? C.RELAX : 0.5;
+        const tol    = C.AREA_TOLERANCE !== undefined ? C.AREA_TOLERANCE : 0.01;
+        const want   = C.MIN_ROUNDNESS !== undefined ? C.MIN_ROUNDNESS : 0.042;
+        const tries  = C.TRIES !== undefined ? C.TRIES : 6;
+        const box = [{ x: r.x, y: r.y }, { x: r.x + r.w, y: r.y },
+                     { x: r.x + r.w, y: r.y + r.h }, { x: r.x, y: r.y + r.h }];
+        const total = values.reduce((a, v) => a + v, 0) || 1;
+        const target = values.map((v) => v / total * r.w * r.h);
+        const n = values.length;
+        const areaOf = (P) => (P.length >= 3 ? Math.abs(this._polySignedArea(P)) : 0);
+        const perim = (P) => {
+            let per = 0;
+            for (let k = 0; k < P.length; k++) {
+                const a = P[k], b = P[(k + 1) % P.length];
+                per += Math.hypot(b.x - a.x, b.y - a.y);
+            }
+            return per;
+        };
+        // Field i's cell: the box, cut by the line it shares with every other.
+        const cells = (S, w) => S.map((si, i) => {
+            let P = box;
+            for (let j = 0; j < n && P.length; j++) {
+                if (j === i) continue;
+                const sj = S[j];
+                const nx = sj.x - si.x, ny = sj.y - si.y;
+                const t = ((sj.x * sj.x + sj.y * sj.y) - (si.x * si.x + si.y * si.y) + w[i] - w[j]) / 2;
+                P = this._polyClip(P, nx, ny, t);
+            }
+            return P;
+        });
+        let best = null, bestScore = Infinity;
+        for (let t = 0; t < tries; t++) {
+            let m = 0;
+            const rnd = () => this._cellHash(seed * 29 + t, m++, 307);
+            // THE POINTS: each the best of a handful of random spots — the
+            // one farthest from those already down — so they spread out.
+            const S = [];
+            for (let i = 0; i < n; i++) {
+                let pick = null, far = -1;
+                for (let c = 0; c < 12; c++) {
+                    const p = { x: r.x + r.w * (0.1 + 0.8 * rnd()), y: r.y + r.h * (0.1 + 0.8 * rnd()) };
+                    const d = S.length ? Math.min(...S.map((q) => Math.hypot(q.x - p.x, q.y - p.y))) : 1;
+                    if (d > far) { far = d; pick = p; }
+                }
+                S.push(pick);
+            }
+            const w = new Array(n).fill(0);
+            let C2 = cells(S, w);
+            for (let it = 0; it < iters; it++) {
+                const A = C2.map(areaOf);
+                const err = Math.max(...A.map((a, i) => Math.abs(a - target[i]) / target[i]));
+                if (it >= relaxN && err < tol) break;
+                for (let i = 0; i < n; i++) {
+                    if (A[i] <= 0) {
+                        // Squeezed out: back in, level with the biggest.
+                        w[i] = Math.max(...w) + 0.01 * r.w * r.h / n;
+                        continue;
+                    }
+                    if (it < relaxN) {
+                        const c = this._polyCentroid(C2[i]);
+                        S[i] = { x: S[i].x + (c.x - S[i].x) * relax, y: S[i].y + (c.y - S[i].y) * relax };
+                    }
+                    // How far the weight must move for the area to: its edges
+                    // shift by δ / (2 × the distance between the two points).
+                    const d = Math.min(...S.map((q, j) => (j === i ? Infinity : Math.hypot(q.x - S[i].x, q.y - S[i].y))));
+                    w[i] += 0.5 * 2 * d * (target[i] - A[i]) / (perim(C2[i]) || 1);
+                }
+                const mean = w.reduce((a, v) => a + v, 0) / n;
+                for (let i = 0; i < n; i++) w[i] -= mean;
+                C2 = cells(S, w);
+            }
+            if (C2.some((P) => P.length < 3)) continue;
+            const A = C2.map(areaOf);
+            const err = Math.max(...A.map((a, i) => Math.abs(a - target[i]) / target[i]));
+            const q = Math.min(...C2.map((P) => areaOf(P) / (perim(P) ** 2 || 1)));
+            const score = err + (q < want ? 1 : 0);
+            if (score < bestScore) { bestScore = score; best = C2; }
+            if (err < tol * 2 && q >= want) break;
+        }
+        // Never nothing: at worst, even strips.
+        return best || values.map((v, i) => [
+            { x: r.x + r.w * i / n, y: r.y }, { x: r.x + r.w * (i + 1) / n, y: r.y },
+            { x: r.x + r.w * (i + 1) / n, y: r.y + r.h }, { x: r.x + r.w * i / n, y: r.y + r.h },
+        ]);
+    }
+
     // ── CONVEX POLYGONS, as lists of {x, y} ─────────────────────────────────
     _polySignedArea(P) {
         let s = 0;
@@ -4277,6 +4380,18 @@ class GameScene extends Phaser.Scene {
         }
         return Q.length >= 3 ? Q : P;
     }
+    _polyCentroid(P) {
+        const A = this._polySignedArea(P);
+        let cx = 0, cy = 0;
+        for (let k = 0; k < P.length; k++) {
+            const p = P[k], q = P[(k + 1) % P.length];
+            const c = p.x * q.y - q.x * p.y;
+            cx += (p.x + q.x) * c; cy += (p.y + q.y) * c;
+        }
+        if (Math.abs(A) > 1e-9) return { x: cx / (6 * A), y: cy / (6 * A) };
+        const b = this._polyBounds(P);
+        return { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+    }
     _polyBounds(P) {
         let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
         for (const p of P) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
@@ -4294,14 +4409,7 @@ class GameScene extends Phaser.Scene {
     // shapes of box — where a field's icon and number go.
     _polyInnerRect(P) {
         const b = this._polyBounds(P);
-        const A = this._polySignedArea(P);
-        let cx = 0, cy = 0;
-        for (let k = 0; k < P.length; k++) {
-            const p = P[k], q = P[(k + 1) % P.length];
-            const c = p.x * q.y - q.x * p.y;
-            cx += (p.x + q.x) * c; cy += (p.y + q.y) * c;
-        }
-        if (Math.abs(A) > 1e-6) { cx /= 6 * A; cy /= 6 * A; } else { cx = b.x + b.w / 2; cy = b.y + b.h / 2; }
+        const { x: cx, y: cy } = this._polyCentroid(P);
         let best = { x: cx, y: cy, w: 0, h: 0 };
         const ar = b.w / (b.h || 1);
         for (const r of [ar, 1, ar * 1.6, ar / 1.6]) {
