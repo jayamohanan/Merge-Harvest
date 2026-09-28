@@ -118,7 +118,7 @@ var CONFIG = {
         BATCH:    4,        // icons per tick, so ~4.5 per second at the default
     },
 
-    BATTERY_START_LEVEL:1,
+    BATTERY_START_LEVEL:25,
     // THE ECONOMY — on the same 2.5× scale as the crop and piggy tables (see
     // THE ECONOMY'S RULES in cropData.js).
     ECONOMY: {
@@ -808,17 +808,35 @@ var CONFIG = {
             // shape — the strips between them included. Not over the field
             // being played, nor the finished ones.
             VEIL_ALPHA: 0.35,
+            // A FIELD DONE: its crop's icon stays, with a big bare tick laid
+            // right across it — popped on as the sweep finishes.
+            DONE: {
+                TICK_FRAC:  1.15,      // the tick, × the icon's larger side
+                TICK_MS:    300,
+                AFTER_MS:   250,       // the tick seen, before the next field unlocks
+                // …and as it lands the crop's icon (and name) swells and settles:
+                // up to SCALE and back, MS each way.
+                CHEER: { ENABLED: true, SCALE: 1.2, MS: 260 },
+                TICK_COLOR: '#7d9a5a', // the stroke — a muted sage, in the game's
+                                       // earthy palette rather than a UI green…
+                TICK_EDGE:  '#3b4529', // …its dark olive outline…
+                TICK_LIGHT: 'rgba(236,240,214,0.45)',   // …and a soft sheen on it
+            },
             // THE NEXT FIELD UNLOCKING: its shade fades off over MS and a puff
             // of pale dust bursts up out of it.
             UNLOCK: {
                 MS:         380,
-                // …then the crop's icon pops up in the middle of the field,
-                // and only after it has does the card go.
+                // …then the crop's icon appears in the middle of the field, at
+                // its own size, and only after it has swelled does the card go.
                 ICON:       true,
-                ICON_MS:    320,
                 ICON_SIZE:  56,    // px @ design, as it shows on the card
                 ICON_FRAC:  0.6,   // never past this share of the field
                 NAME_SIZE:  16,    // the crop's name over it, px @ design on the card
+                // Shown, the icon (and name) swell and settle once — up to
+                // PULSE_SCALE and back over PULSE_MS — then the card goes.
+                PULSE_SCALE:  1.2,
+                PULSE_MS:     520,
+                AFTER_MS:    1000, // settled, a beat before the card goes
                 PUFF:       true,
                 PUFF_COUNT: 14,
                 PUFF_SIZE:  0.32,  // one cloud, × the field's shorter side
@@ -1211,7 +1229,8 @@ var CONFIG = {
             ENABLED:     true,
             FILE:        'stump',
             SHADOW_FRAC: 0.5,
-            KEEP:        0.2,
+            KEEP:        0.15,  // the tallest a stump is, × the plant's height…
+            KEEP_MIN:    0.10,  // …and the shortest: each plant picks its own
             KEEP_W:      0.1,   // …and only this middle share of its width —
                                 // 5% either side of the centre
             // A SLANTED CUT, not a flat one: the top at this many degrees off

@@ -2463,7 +2463,12 @@ class GameScene extends Phaser.Scene {
                 }
                 const pl = p.plant;
                 this.tweens.killTweensOf(pl);
-                const fr = pl.frame, keep = Math.min(1, ST.KEEP);
+                // Per plant, between KEEP_MIN and KEEP — a stable hash of its
+                // place, so each stump keeps its own height.
+                const kMax = Math.min(1, ST.KEEP);
+                const kMin = Math.min(kMax, ST.KEEP_MIN > 0 ? ST.KEEP_MIN : kMax);
+                const fr = pl.frame;
+                const keep = kMin + (kMax - kMin) * this._cellHash(crop.row, p.k + 307, crop.level || 0);
                 const keepW = ST.KEEP_W > 0 ? Math.min(1, ST.KEEP_W) : 1;   // centred
                 // SLANT_DEG as a share of the plant's height: the rise across
                 // the kept width at that angle.
@@ -2969,22 +2974,40 @@ class GameScene extends Phaser.Scene {
         const outMs = MI.OUT_MS  !== undefined ? MI.OUT_MS  : 260;
         const hold  = MI.HOLD_MS !== undefined ? MI.HOLD_MS : 600;
         const swapMs = M.SWAP_MS !== undefined ? M.SWAP_MS : 380;
-        const sweep = (MI.SWEEP_MS !== undefined ? MI.SWEEP_MS : 600)
-                    + (MI.LIFT_MS  !== undefined ? MI.LIFT_MS  : 240)
-                    + (MI.FADE_MS  !== undefined ? MI.FADE_MS  : 140);
+        // THE FINISHED FIELD'S WHOLE BEAT: the sweep, and then its tick —
+        // popped on once the sweep's last plant has risen (see harvestAll) —
+        // landing, with DONE.AFTER_MS to be seen, before anything unlocks.
+        const Dn = MI.DONE || {};
+        const sweep = Math.max(
+            (MI.SWEEP_MS !== undefined ? MI.SWEEP_MS : 600) + (MI.LIFT_MS !== undefined ? MI.LIFT_MS : 240)
+                + (MI.FADE_MS !== undefined ? MI.FADE_MS : 140),
+            (MI.SWEEP_MS !== undefined ? MI.SWEEP_MS : 600) + (MI.LIFT_MS !== undefined ? MI.LIFT_MS : 240)
+                + Math.max(Dn.TICK_MS !== undefined ? Dn.TICK_MS : 300,
+                           2 * ((Dn.CHEER || {}).MS !== undefined ? Dn.CHEER.MS : 260))
+                + (Dn.AFTER_MS !== undefined ? Dn.AFTER_MS : 250));
         const later = (ms, fn) => this.time.delayedCall(ms, fn);
         const unlockMs = (MI.UNLOCK || {}).MS !== undefined ? MI.UNLOCK.MS : 380;
         // Once the unlock has played, HOLD_MS to read it, then the card goes —
         // and only then does the next level grow in, into the space it left.
         const U = MI.UNLOCK || {};
-        const iconMs = U.ICON !== false ? (U.ICON_MS !== undefined ? U.ICON_MS : 320) : 0;
-        const hide = (card) => later(unlockMs + iconMs + hold, () =>
+        // With the icon: its swell, then AFTER_MS, then on to play.
+        // Without: HOLD_MS to read the unlock.
+        const iconMs = U.ICON !== false
+            ? (U.PULSE_MS !== undefined ? U.PULSE_MS : 520)
+              + (U.AFTER_MS !== undefined ? U.AFTER_MS : 1000)   // …and a second to take it in
+            : hold;
+        const hide = (card) => later(unlockMs + iconMs, () =>
             this.tweens.add({ targets: card.box, alpha: 0, duration: outMs,
                 onComplete: () => { if (card.box.scene) card.box.setVisible(false); turn(); done(); } }));
 
         this.tweens.killTweensOf(map.box);
         map.box.setVisible(true).setAlpha(0);
         this.tweens.add({ targets: map.box, alpha: 1, duration: inMs });
+        // THE FARM INFO STEPS ASIDE while the card is up — one thing to read
+        // at a time. It needs no fading back: the level turn's reel puts the
+        // blocks up again itself (see _updateFarmInfo).
+        const info = this.farmInfo && this.farmInfo.scene ? this.farmInfo : null;
+        if (info) { this.tweens.killTweensOf(info); this.tweens.add({ targets: info, alpha: 0, duration: inMs }); }
         later(inMs, () => map.harvestAll(finished));
         if (next > last) { later(inMs + sweep, () => hide(map)); return; }
         // Mid-batch: the shade lifts off the next field and its number leads.
@@ -3067,6 +3090,43 @@ class GameScene extends Phaser.Scene {
         const file = (M.ICON_FILES || {})[name] || name;
         return this.assets.ensureImage(this._cropIconKey(name),
             `${M.ICON_DIR || 'graphics/crop/icon/'}${file}-icon.webp`);
+    }
+
+    // THE DONE MARK: a bare tick, drawn big and bold — no disc — so laid
+    // over a crop's icon it reads as the whole crop checked off. A dark
+    // outline under it holds it on any icon colour; a lighter streak along
+    // its upper edge gives it a drawn, glossy stroke. Made once.
+    _tickTexture() {
+        const key = 'fx_tick2';
+        if (this.textures.exists(key)) return key;
+        const D = ((CONFIG.FIELD_MAP || {}).MINI || {}).DONE || {};
+        const px = 128;
+        const cv = this.textures.createCanvas(key, px, px);
+        const ctx = cv.getContext();
+        // A short down-stroke into a long up-stroke, the long one a touch
+        // curved — a hand's tick, not a ruler's.
+        const path = () => {
+            ctx.beginPath();
+            ctx.moveTo(px * 0.14, px * 0.54);
+            ctx.lineTo(px * 0.38, px * 0.78);
+            ctx.quadraticCurveTo(px * 0.56, px * 0.46, px * 0.88, px * 0.18);
+        };
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = D.TICK_EDGE || '#3b4529';
+        ctx.lineWidth = px * 0.2;
+        path(); ctx.stroke();
+        ctx.strokeStyle = D.TICK_COLOR || '#7d9a5a';
+        ctx.lineWidth = px * 0.13;
+        path(); ctx.stroke();
+        ctx.save();
+        ctx.translate(-px * 0.012, -px * 0.02);
+        ctx.strokeStyle = D.TICK_LIGHT || 'rgba(236,240,214,0.45)';
+        ctx.lineWidth = px * 0.04;
+        path(); ctx.stroke();
+        ctx.restore();
+        cv.refresh();
+        return key;
     }
 
     // A soft round cloud, white fading to nothing at its edge — tinted where
@@ -3427,13 +3487,11 @@ class GameScene extends Phaser.Scene {
             harvestAll: (lvl) => {
                 const f = fields[lvl];
                 if (!f || !f.cv || !f.order.length || f.cleared) return;
-                // The field's crop icon goes up and away as the harvest starts.
-                for (const ic of [f.icon, f.iconName]) {
-                    if (!ic || !ic.scene) continue;
-                    this.tweens.add({ targets: ic, y: ic.y - ic.displayHeight * 0.4, alpha: 0,
-                        duration: 260, ease: 'Quad.easeIn', onComplete: () => ic.destroy() });
-                }
-                f.icon = f.iconName = null;
+                // THE FIELD IS MARKED DONE once the sweep has crossed it: its
+                // crop's icon stays, and a green tick pops onto it.
+                this.time.delayedCall(
+                    (MI.SWEEP_MS !== undefined ? MI.SWEEP_MS : 600) + (MI.LIFT_MS !== undefined ? MI.LIFT_MS : 240),
+                    () => { if (box.scene) api.markDone(lvl, true); });
                 const sweep = MI.SWEEP_MS !== undefined ? MI.SWEEP_MS : 600;
                 const lift  = MI.LIFT_MS  !== undefined ? MI.LIFT_MS  : 240;
                 const fade  = MI.FADE_MS  !== undefined ? MI.FADE_MS  : 140;
@@ -3462,15 +3520,15 @@ class GameScene extends Phaser.Scene {
             // (MINI.UNLOCK.ICON_SIZE on screen), never past ICON_FRAC of the
             // field, its own shape kept. `pop` swells it in; otherwise it is
             // simply there. Put up as soon as its file is in, if it was not.
-            showIcon: (lvl, pop) => {
+            showIcon: (lvl, pop, done) => {
                 const f = fields[lvl];
-                if (!f || f.icon) return;
+                if (!f || f.icon) { if (f && done) api.markDone(lvl, pop); return; }
                 const U = MI.UNLOCK || {};
                 const name = this._cropForLevel(lvl);
                 const key = this._cropIconKey(name);
                 if (!this.textures.exists(key)) {
                     this._ensureCropIcon(name).then(() => {
-                        if (box.scene && this.textures.exists(key)) api.showIcon(lvl, false);
+                        if (box.scene && this.textures.exists(key)) api.showIcon(lvl, false, done || f.done);
                     });
                     return;
                 }
@@ -3501,14 +3559,59 @@ class GameScene extends Phaser.Scene {
                 box.addAt(nm, box.getIndex(numBox));
                 f.icon = ic;
                 f.iconName = nm;
+                if (done || f.done) api.markDone(lvl, false);
                 if (!pop) return;
-                const ms = U.ICON_MS !== undefined ? U.ICON_MS : 320;
-                const sx = ic.scaleX, sy = ic.scaleY;
-                ic.setScale(0);
-                this.tweens.add({ targets: ic, scaleX: sx, scaleY: sy, duration: ms, ease: 'Back.easeOut' });
-                nm.setAlpha(0).setScale(fit * 0.6);
-                this.tweens.add({ targets: nm, alpha: 1, scale: fit, duration: ms, ease: 'Back.easeOut',
-                    delay: ms * 0.3 });
+                // THERE AT ONCE, at its own size — no pop in — and then it
+                // SWELLS AND SETTLES once, icon and name together: up to
+                // PULSE_SCALE and back over PULSE_MS. The same beat a field
+                // gets when it is finished (DONE.CHEER), for its start.
+                const pk = U.PULSE_SCALE !== undefined ? U.PULSE_SCALE : 1.2;
+                const pm = U.PULSE_MS    !== undefined ? U.PULSE_MS    : 520;
+                for (const o of [ic, nm]) {
+                    const bx = o.scaleX, by = o.scaleY;
+                    this.tweens.add({ targets: o, scaleX: bx * pk, scaleY: by * pk,
+                        duration: pm / 2, yoyo: true, ease: 'Sine.easeInOut',
+                        onComplete: () => { if (o.scene) o.setScale(bx, by); } });
+                }
+            },
+            // DONE: a big green tick laid across the field's crop icon. The icon is put up first if it is not already there.
+            markDone: (lvl, pop) => {
+                const f = fields[lvl];
+                if (!f) return;
+                f.done = true;
+                if (f.tick) return;
+                if (!f.icon) { api.showIcon(lvl, false, true); return; }
+                const D = MI.DONE || {};
+                const ic = f.icon;
+                // OVER THE WHOLE ICON, centred on it and a little larger, so
+                // the tick crosses the crop rather than sitting off to one side.
+                const size = Math.max(ic.displayWidth, ic.displayHeight) * (D.TICK_FRAC !== undefined ? D.TICK_FRAC : 1.15);
+                const tick = this.add.image(ic.x, ic.y, this._tickTexture()).setDisplaySize(size, size);
+                box.addAt(tick, box.getIndex(numBox));
+                f.tick = tick;
+                if (!pop) return;
+                // THE CROP CHEERS AS IT IS TICKED: a quick swell and a little
+                // wiggle on the icon (and a lighter one on its name), so the
+                // field reads as just finished rather than simply still.
+                // THE CROP SWELLS AS IT IS TICKED — up to CHEER.SCALE and back
+                // over CHEER.MS each way, its name with it — so the field reads
+                // as just finished rather than simply still.
+                const C = D.CHEER || {};
+                if (C.ENABLED !== false) {
+                    const k = C.SCALE !== undefined ? C.SCALE : 1.2;
+                    const ms = C.MS !== undefined ? C.MS : 260;
+                    for (const o of [ic, f.iconName]) {
+                        if (!o || !o.scene) continue;
+                        const bx = o.scaleX, by = o.scaleY;
+                        this.tweens.add({ targets: o, scaleX: bx * k, scaleY: by * k,
+                            duration: ms, yoyo: true, ease: 'Sine.easeInOut',
+                            onComplete: () => { if (o.scene) o.setScale(bx, by); } });
+                    }
+                }
+                const sc = tick.scaleX;
+                tick.setScale(0);
+                this.tweens.add({ targets: tick, scale: sc,
+                    duration: D.TICK_MS !== undefined ? D.TICK_MS : 300, ease: 'Back.easeOut' });
             },
             // A FIELD UNLOCKED: the shade over it lifts — faded off, not
             // snapped — and a puff of dust bursts up out of it, as if
@@ -3563,6 +3666,8 @@ class GameScene extends Phaser.Scene {
                 }
             },
         };
+        // Fields already finished when the card is made wear their tick now.
+        for (const l of levels) if (l < doneBelow) api.markDone(l, false);
         return api;
     }
 
