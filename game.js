@@ -1540,7 +1540,19 @@ class GameScene extends Phaser.Scene {
     // first three of its row of ten, at the same places and sizes. The one
     // exception is a level of single plants, which stand centred over their
     // slots as they always have.
+    //
+    // PLANT_SCALE (CROPS.SPRITE_SPACE) then grows every plant where it
+    // stands — its feet kept, its height and width both × that — after all
+    // the fitting to the plot's column, which would otherwise shrink a
+    // bigger plant straight back down. The spacing is untouched.
     _rowPlacement(i, cx, baseY, w, h, nMax, n, flip, lvl) {
+        const SS = (CONFIG.CROPS || {}).SPRITE_SPACE || {};
+        const g = SS.PLANT_SCALE > 0 ? SS.PLANT_SCALE : 1;
+        const out = this._rowPlacementFitted(i, cx, baseY, w, h, nMax, n, flip, lvl);
+        if (g !== 1) for (const q of out) { q.pw *= g; q.ph *= g; }
+        return out;
+    }
+    _rowPlacementFitted(i, cx, baseY, w, h, nMax, n, flip, lvl) {
         const rows = this.farmRows || [];
         if (nMax < 2 || rows.length < 3) return this._rowPlacementRaw(i, cx, baseY, w, h, nMax, n, flip, lvl);
         const maxN = Math.max(2, ((CONFIG.CROPS || {}).DEPTH || {}).ROW_MAX || 10);
@@ -1755,9 +1767,37 @@ class GameScene extends Phaser.Scene {
             place.forEach((q) => all.push(q));
         });
         all.sort((a, b) => a.pby - b.pby);
+        // THE ROOM THE PLANTS HAVE: the crop's own band — under the farm
+        // info, over the slots, the half's width less its pad — the same
+        // space the field map card takes (_fieldMiniRect). Shaded light, under
+        // the plants, so what they leave unused shows round them.
+        const room = this._fieldMiniRect();
+        const s = this.layoutConfig.scale;
+        if (PV.AREA !== false) {
+            root.add(this.add.rectangle(room.x, room.y, room.w, room.h,
+                hexColor(PV.AREA_COLOR || '#fff3d6'), PV.AREA_ALPHA !== undefined ? PV.AREA_ALPHA : 0.7)
+                .setOrigin(0, 0));
+        }
         for (const q of all) {
             root.add(this.add.image(q.px, q.pby, `crop_${st.crop}`, 0).setOrigin(0.5, 1)
                 .setDisplaySize(q.pw, q.ph).setFlipX(q.pflip));
+        }
+        // …and WHAT THEY TAKE of it: an outline round every plant's box
+        // together, and how much of the band's width and height that is.
+        if (PV.AREA !== false && all.length) {
+            const x0 = Math.min(...all.map((q) => q.px - q.pw / 2)), x1 = Math.max(...all.map((q) => q.px + q.pw / 2));
+            const y0 = Math.min(...all.map((q) => q.pby - q.ph)),    y1 = Math.max(...all.map((q) => q.pby));
+            const g = this.add.graphics();
+            g.lineStyle(Math.max(1, 1.5 * s), hexColor(PV.USED_COLOR || '#d0342c'), 0.9)
+                .strokeRect(x0, y0, x1 - x0, y1 - y0);
+            root.add(g);
+            const pct = (a, b) => Math.round(a / b * 100);
+            root.add(this.add.text(room.x + room.w - 4 * s, room.y + 4 * s,
+                `plants ${pct(x1 - x0, room.w)}% wide · ${pct(y1 - y0, room.h)}% tall`, {
+                    fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
+                    fontSize: Math.round(13 * s) + 'px', color: '#fff6e0',
+                    stroke: '#3b2a17', strokeThickness: Math.max(1, Math.round(2.5 * s)),
+                }).setOrigin(1, 0));
         }
         this.cropPreview = root;
 

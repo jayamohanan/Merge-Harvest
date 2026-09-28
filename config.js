@@ -1138,6 +1138,11 @@ var CONFIG = {
         // its floor, so all three keep one ground line.
         SPRITE_SPACE: {
             HEIGHT_FRAC: 0.70,     // of plotBandH
+            // EVERY PLANT DRAWN THIS MUCH BIGGER — height and width, feet
+            // where they were — after the rows are fitted to their columns
+            // (see _rowPlacement). Raising HEIGHT_FRAC does little on a full
+            // row: the column fit shrinks it straight back. 1: as fitted.
+            PLANT_SCALE: 1.5,
             REF: 'tomato',         // whose aspect the box is cut to
             // Used only if REF's art is missing, so the pair still has a width
             // to be centred on rather than collapsing to the slot alone. Kept
@@ -1260,6 +1265,13 @@ var CONFIG = {
                 ENABLED:     true,
                 CROP:        'tomato',
                 COUNTS:      [10, 10, 10],   // plot 1, 2, 3 — at most DEPTH.ROW_MAX
+                // THE PLANTS' ROOM — the band between the farm info and the
+                // slots — shaded light under them, with an outline round what
+                // the rows actually take and the share of it. false: plants only.
+                AREA:        true,
+                AREA_COLOR:  '#fff3d6',
+                AREA_ALPHA:  0.7,
+                USED_COLOR:  '#d0342c',
                 PANEL_ALPHA: 1,
                 DEPTH:       62,
             },
