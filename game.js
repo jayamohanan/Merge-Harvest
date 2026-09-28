@@ -1919,6 +1919,12 @@ class GameScene extends Phaser.Scene {
         // THE CARD, as the game builds it. VIEW 'open': every field unshaded
         // and wearing its crop; 'start': as the section opens in play — its
         // first field current and wearing its crop, the rest under the shade.
+        // Every section's icons asked for at once, the first time — so
+        // stepping through does not wait on each file as its card comes up.
+        if (!this._fieldPreviewIcons) {
+            this._fieldPreviewIcons = true;
+            for (let l = 1; l <= CROP_VALUES.length; l++) this._ensureCropIcon(this._cropForLevel(l));
+        }
         const map = this._buildFieldMap(at, first);
         map.box.setDepth(depth + 1);
         if (PV.VIEW === 'start') {
@@ -3756,8 +3762,10 @@ class GameScene extends Phaser.Scene {
         const levels = [];
         for (let l = first; l < first + 5 && l <= CROP_VALUES.length; l++) levels.push(l);
         // This card's crop icons, fetched now — while the level is played —
-        // so each is in hand by the time its field unlocks.
-        for (const l of levels) this._ensureCropIcon(this._cropForLevel(l));
+        // so each is in hand by the time its field unlocks. The NEXT
+        // section's too: its card is only built when this one ends, and
+        // fetched only then, its first icon came in late from a slow server.
+        for (let l = first; l < first + 10 && l <= CROP_VALUES.length; l++) this._ensureCropIcon(this._cropForLevel(l));
 
         // The layout's own space: the half less its margin, as wide as ever but
         // only as tall as the card's shape allows — so the fields fill a card
@@ -4218,10 +4226,15 @@ class GameScene extends Phaser.Scene {
                 const gap = 3 * s / kc;
                 const fit = Math.min(1, (q.w * 0.9) / Math.max(iw, nm.width),
                                         (q.h * 0.9) / (nm.height + gap + ih));
-                const groupH = (nm.height + gap + ih) * fit;
+                // NEVER SMALLER THAN ICON_MIN on the card, however small the
+                // field — a small field's icon may reach past its edges rather
+                // than shrink out of sight. Only the icon: the name still fits.
+                const minI = (U.ICON_MIN !== undefined ? U.ICON_MIN : 32) * s / kc;
+                const fi = Math.max(fit, minI / Math.max(iw, ih));
+                const groupH = nm.height * fit + gap * fit + ih * fi;
                 const cx = q.x + q.w / 2, top = q.y + (q.h - groupH) / 2;
-                const ic = this.add.image(cx, top + (nm.height + gap) * fit + ih * fit / 2, key)
-                    .setDisplaySize(iw * fit, ih * fit);
+                const ic = this.add.image(cx, top + (nm.height + gap) * fit + ih * fi / 2, key)
+                    .setDisplaySize(iw * fi, ih * fi);
                 nm.setPosition(cx, top + nm.height * fit).setScale(fit);
                 box.addAt(ic, box.getIndex(numBox));
                 box.addAt(nm, box.getIndex(numBox));
