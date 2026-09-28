@@ -1134,7 +1134,7 @@ var CONFIG = {
             // where they were — after the rows are fitted to their columns
             // (see _rowPlacement). Raising HEIGHT_FRAC does little on a full
             // row: the column fit shrinks it straight back. 1: as fitted.
-            PLANT_SCALE: 1.5,
+            PLANT_SCALE: 1.2,
             REF: 'tomato',         // whose aspect the box is cut to
             // Used only if REF's art is missing, so the pair still has a width
             // to be centred on rather than collapsing to the slot alone. Kept
