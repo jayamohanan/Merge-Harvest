@@ -2054,6 +2054,36 @@ class GameScene extends Phaser.Scene {
     // fades. Placed off the figure as it stands BEFORE this tick rewrites it,
     // and on the tick that spends the plot, the figure is about to go — the
     // delta still leaves from where it was. See CROPS.YIELD_LABEL.DELTA.
+    // ── POOLED FLOATING TEXT ─────────────────────────────────────────────────
+    // The numbers that float up and fade — a pick's "-N", a plant's "+N", a
+    // section's bonus — are TAKEN FROM A POOL, one per `kind`, not made and
+    // thrown away each time. A finished one is only hidden; the next of its
+    // kind takes it back, re-texted and moved. A new one is made only when
+    // every one of its kind is still in the air, so a pool grows to the most
+    // ever up at once and stays there. Its style is set again only if it
+    // changed (a relayout's new scale), since a restyle redraws it.
+    _floatText(kind, style) {
+        const pools = this._textPools || (this._textPools = {});
+        const list  = (pools[kind] || []).filter((o) => o.scene);
+        pools[kind] = list;
+        const key = JSON.stringify(style);
+        let t = list.find((o) => !o.visible);
+        if (!t) {
+            t = this.add.text(0, 0, '', style);
+            list.push(t);
+        } else {
+            this.tweens.killTweensOf(t);
+            if (t._styleKey !== key) t.setStyle(style);
+        }
+        t._styleKey = key;
+        return t.setVisible(true).setAlpha(1).setScale(1).setAngle(0);
+    }
+
+    // Back to its pool — hidden, not destroyed.
+    _floatTextDone(t) {
+        if (t && t.scene) { this.tweens.killTweensOf(t); t.setVisible(false); }
+    }
+
     _showYieldDelta(crop, amount) {
         const Y  = (CONFIG.CROPS || {}).YIELD_LABEL || {};
         const DL = Y.DELTA || {};
@@ -2064,17 +2094,18 @@ class GameScene extends Phaser.Scene {
         const D  = (CONFIG.CROPS || {}).DEPTH || {};
         const x  = lb.x + lb.width / 2 + (DL.GAP !== undefined ? DL.GAP : 4) * s;
         const y  = lb.y + lb.height / 2;
-        const t = this.add.text(x, y, '-' + this._bigNum(amount), {
+        const t = this._floatText('yieldDelta', {
             fontSize: fs + 'px', fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
             color: DL.COLOR || '#8a3b1c',
-        }).setOrigin(0, 0.5).setDepth(D.LABEL !== undefined ? D.LABEL : 8);
+        }).setText('-' + this._bigNum(amount)).setPosition(x, y)
+          .setOrigin(0, 0.5).setDepth(D.LABEL !== undefined ? D.LABEL : 8);
         this.tweens.add({
             targets: t,
             x: x + (DL.DRIFT !== undefined ? DL.DRIFT : 42) * s,
             alpha: 0,
             duration: DL.MS !== undefined ? DL.MS : 650,
             ease: DL.EASE || 'Quad.easeOut',
-            onComplete: () => t.destroy(),
+            onComplete: () => this._floatTextDone(t),
         });
     }
 
@@ -3250,11 +3281,13 @@ class GameScene extends Phaser.Scene {
             * (((CONFIG.CROPS || {}).PIGGY || {}).PAYOUT_MULT !== undefined ? CONFIG.CROPS.PIGGY.PAYOUT_MULT : 1)));
         later(bonusAt, () => {
             const fs = Math.round((SC.BONUS_SIZE !== undefined ? SC.BONUS_SIZE : 44) * s);
-            const fig = this.add.text(cx, cy + r.h * 0.08, `+${this._bigNum(bonus)}`, {
+            const fig = this._floatText('sectionBonus', {
                 fontSize: fs + 'px', fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
                 color: CC.TEXT_COLOR || '#f7ca42', stroke: CC.TEXT_STROKE_COLOR || '#7e5d11',
                 strokeThickness: Math.max(3, Math.round(fs * 0.12)),
-            }).setOrigin(0.5).setDepth(depth).setScale(0.4).setAlpha(0);
+            }).setText(`+${this._bigNum(bonus)}`).setPosition(cx, cy + r.h * 0.08)
+              .setOrigin(0.5).setDepth(depth).setScale(0.4).setAlpha(0);
+            fig._pooled = true;                         // handed back, not destroyed
             made.push(fig);
             this.tweens.add({ targets: fig, scale: 1, alpha: 1, duration: 260, ease: 'Back.easeOut' });
             this.animateCoinReward(cx, cy, bonus, 0, null, null);
@@ -3267,7 +3300,12 @@ class GameScene extends Phaser.Scene {
             const live = made.filter((o) => o && o.scene);
             if (!live.length) { then(); return; }
             this.tweens.add({ targets: live, alpha: 0, duration: 260,
-                onComplete: () => { for (const o of live) if (o.scene) o.destroy(); } });
+                onComplete: () => {
+                    for (const o of live) {
+                        if (!o.scene) continue;
+                        if (o._pooled) this._floatTextDone(o); else o.destroy();
+                    }
+                } });
             later(260, then);
         });
     }
@@ -5739,14 +5777,14 @@ class GameScene extends Phaser.Scene {
         // "+N", in the coin counter's own gold, rising and fading.
         const CC = CONFIG.COIN_COUNTER || {};
         const fs = Math.max(12, Math.round((R.TEXT_SIZE !== undefined ? R.TEXT_SIZE : 26) * s));
-        const txt = this.add.text(x, y, `+${this._bigNum(amount)}`, {
+        const txt = this._floatText('plantReward', {
             fontSize: fs + 'px', fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
             color: CC.TEXT_COLOR || '#f7ca42', stroke: CC.TEXT_STROKE_COLOR || '#7e5d11',
             strokeThickness: Math.max(2, Math.round(3 * s)),
-        }).setOrigin(0.5).setDepth(8.5);
+        }).setText(`+${this._bigNum(amount)}`).setPosition(x, y).setOrigin(0.5).setDepth(8.5);
         this.tweens.add({ targets: txt, y: y - 40 * s, alpha: { from: 1, to: 0 },
             duration: R.TEXT_MS !== undefined ? R.TEXT_MS : 800, ease: 'Cubic.easeOut',
-            onComplete: () => txt.destroy() });
+            onComplete: () => this._floatTextDone(txt) });
 
         // THE COINS: a few, popped up off the plant and then to the counter.
         if (!this.coinIcon || !this.coinIcon.scene) { this.coins += amount; this.updateCoinDisplay(); return; }
