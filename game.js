@@ -508,9 +508,15 @@ class GameScene extends Phaser.Scene {
             this._relayoutPending = false;
             return;
         }
-        if (!this._turnSeenAt) this._turnSeenAt = now;
-        if (now - this._turnSeenAt >= (S.RELAYOUT_DEBOUNCE_MS !== undefined ? S.RELAYOUT_DEBOUNCE_MS : 100)) {
+        if (!this._turnSeenAt) {
+            this._turnSeenAt = now;
+            orientLog(`turn seen: frame ${w} x ${h} is ${h > w ? 'PORTRAIT' : 'LANDSCAPE'}, ` +
+                `game is ${this.isPortrait ? 'PORTRAIT' : 'LANDSCAPE'} (${this.scale.width} x ${this.scale.height})`);
+        }
+        if (!this._relayoutPending &&
+            now - this._turnSeenAt >= (S.RELAYOUT_DEBOUNCE_MS !== undefined ? S.RELAYOUT_DEBOUNCE_MS : 100)) {
             this._relayoutPending = true;
+            orientLog('relayout pending — runs once the field is settled');
         }
     }
 
@@ -518,11 +524,21 @@ class GameScene extends Phaser.Scene {
     // tutorial pointers, the slot hints, the level-up button's pulse — never
     // end, and are simply rebuilt on the new layout, so they do not count.
     _isSettled() {
-        if (this.draggingBattery || this.isWatchingAd || this._levelTurning) return false;
-        if ((this._coinFlights || 0) > 0) return false;
-        if (this.farmInfoTransient && this.farmInfoTransient.length) return false;
-        for (const c of this.crops || []) if (!c.ready || c.regrow) return false;
-        return this.tweens.getTweens().every((t) => t.isInfinite);
+        return !this._unsettledBy();
+    }
+    // What is holding the field unsettled, or null — named for [orient].
+    _unsettledBy() {
+        if (this.draggingBattery) return 'a pig is being dragged';
+        if (this.isWatchingAd)    return 'an ad is playing';
+        if (this._levelTurning)   return 'a level turn';
+        if ((this._coinFlights || 0) > 0) return 'coins in flight';
+        if (this.farmInfoTransient && this.farmInfoTransient.length) return 'the farm info is animating';
+        for (const c of this.crops || []) {
+            if (!c.ready)  return `plot ${c.row + 1} still growing in`;
+            if (c.regrow)  return `plot ${c.row + 1} regrowing a fruit`;
+        }
+        const t = this.tweens.getTweens().filter((tw) => !tw.isInfinite).length;
+        return t ? `${t} tween(s) running` : null;
     }
 
     // Time sped up while a relayout waits, and put back after. The charge tick
@@ -537,7 +553,10 @@ class GameScene extends Phaser.Scene {
 
     _relayout() {
         this._relayoutPending = false;
+        this._orientWaitWhy = undefined;
         const st = pickStage();
+        orientLog(`relayout: frame ${window.innerWidth} x ${window.innerHeight} -> ` +
+            `${st.portrait ? 'PORTRAIT' : 'LANDSCAPE'} stage ${st.width} x ${st.height}`);
         this.scale.setGameSize(st.width, st.height);
         this.cameras.main.setSize(st.width, st.height);
 
@@ -6550,7 +6569,9 @@ class GameScene extends Phaser.Scene {
         if (this.gamePaused) return;
         this._pollOrientation();
         if (this._relayoutPending) {
-            if (this._isSettled()) { this._fastForward(false); this._relayout(); }
+            const why = this._unsettledBy();
+            if (why !== this._orientWaitWhy) { this._orientWaitWhy = why; if (why) orientLog(`relayout waiting: ${why}`); }
+            if (!why) { this._fastForward(false); this._relayout(); }
             // Not while a pig is held: that wait is the player's, and the
             // field racing along under their finger would look broken.
             else this._fastForward(!this.draggingBattery);
@@ -6566,6 +6587,11 @@ class GameScene extends Phaser.Scene {
 // PHASER CONFIG + BOOT
 // ================================================================
 const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+// [orient] console lines — CONFIG.DEBUG_ORIENTATION.
+function orientLog(msg) {
+    if (typeof CONFIG !== 'undefined' && CONFIG.DEBUG_ORIENTATION) console.log(`[orient] ${msg}`);
+}
 
 // ── THE STAGE ──────────────────────────────────────────────────────────────
 // One fixed render size, decided once, scaled by the browser to fill whatever
@@ -6607,6 +6633,8 @@ function pickStage() {
     return { portrait, width: d.W, height };
 }
 const STAGE = pickStage();
+orientLog(`boot: frame ${window.innerWidth} x ${window.innerHeight} -> ` +
+    `${STAGE.portrait ? 'PORTRAIT' : 'LANDSCAPE'} stage ${STAGE.width} x ${STAGE.height}`);
 
 const GAME_WIDTH  = STAGE.width;
 const GAME_HEIGHT = STAGE.height;

@@ -102,6 +102,9 @@ var CONFIG = {
     DEBUG_LAYOUT: false,     // log the canvas size, the layout's numbers and
                              // the camera split once at startup: [buffer],
                              // [layout], [camB], and the battery sprite count
+    DEBUG_ORIENTATION: true, // [orient] logs: the frame size and stage chosen at
+                             // boot, each portrait/landscape turn noticed, what
+                             // holds a relayout back, and the stage it picks
     // HOW MANY BATTERY LEVELS ARE FETCHED AHEAD of the highest one reached.
     // Each icon is ~2.5KB — the whole set of 102 is 256KB — so this is nearly
     // free, and it is what keeps a fast run of merges from reaching a level
