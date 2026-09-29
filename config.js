@@ -37,6 +37,14 @@ var CONFIG = {
         // is in there now is a crop and three slots, and neither half has a
         // claim on more than half.
         LANDSCAPE_SPLIT: 0.5,
+        // LANDSCAPE MERGE COLUMN (coin, grid, spawn button). On a half taller
+        // than it needs, the column grows up to LANDSCAPE_GRID_GROW × its
+        // width-fitted size (1 = never), its panel no wider than
+        // LANDSCAPE_GRID_MAX_W of the half; then, with LANDSCAPE_CENTER, it is
+        // centred as one block so leftover height splits above and below.
+        LANDSCAPE_GRID_GROW:  1.15,
+        LANDSCAPE_GRID_MAX_W: 0.9,
+        LANDSCAPE_CENTER:     true,
         PORTRAIT_SPLIT:  0.5,
 
         // The design reference is a 1440x778 MacBook. REF_W is the UI half AT

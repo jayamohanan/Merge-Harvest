@@ -267,8 +267,22 @@ class GameScene extends Phaser.Scene {
         const REF_W = isP ? (LY.REF_W_PORTRAIT || 720) : 1440 * splitL;
         const sW    = partA.width  / REF_W;             // horizontal ratio
         const sH    = partA.height / REF_H;             // vertical ratio
-        const scale = Math.min(sW, sH);                 // uniform size factor (square-preserving)
+        const baseScale = Math.min(sW, sH);             // uniform size factor (square-preserving)
+        // LANDSCAPE: THE MERGE COLUMN GROWS INTO SPARE HEIGHT. A half taller
+        // than the width-fitted column needs (sH > sW — 16:9 already, more so
+        // 16:10 and an iPad) lets the coin/grid/button column grow, up to
+        // LANDSCAPE_GRID_GROW × and never past the height or LANDSCAPE_GRID_MAX_W
+        // of the half's width. Only this column: the farm keeps baseScale
+        // (exported as `scale`), its slots baseCell. Portrait is untouched.
+        let scale = baseScale;
+        if (!isP) {
+            const grow = LY.LANDSCAPE_GRID_GROW !== undefined ? LY.LANDSCAPE_GRID_GROW : 1.15;
+            const designPanW = COLS * BASE + (COLS - 1) * GAP + 2 * panPadRef;
+            const wCap = partA.width * (LY.LANDSCAPE_GRID_MAX_W !== undefined ? LY.LANDSCAPE_GRID_MAX_W : 0.9) / designPanW;
+            scale = Math.max(baseScale, Math.min(baseScale * grow, sH, wCap));
+        }
         const cellSize = BASE * scale;                  // no Math.min(BASE,…) clamp
+        const baseCell = BASE * baseScale;              // the farm's slots stay at this
 
         // SIZES — uniform `scale`
         const panPad           = Math.floor(panPadRef * scale);
@@ -290,8 +304,8 @@ class GameScene extends Phaser.Scene {
         // column now starts at the coin in both orientations, so dropping the
         // panel would only reopen the gap the short column closes.
         const designPanelCY     = designGridBotEdge + panPadRef - designPanH / 2;
-        const buttonCenterY     = partA.y + designButtonCY * sH;
-        const panelCenterY      = partA.y + designPanelCY  * sH;
+        let   buttonCenterY     = partA.y + designButtonCY * sH;
+        let   panelCenterY      = partA.y + designPanelCY  * sH;
 
         // ── The farm half's three plots ───────────────────────────────────────
         // One plot per slot, side by side across the half: the plant with its
@@ -307,12 +321,12 @@ class GameScene extends Phaser.Scene {
         // to give a plot a cell's worth.
         const FS       = P.FARM_SLOTS || {};
         const plotBandH = partB.height * (FS.BAND_FRAC !== undefined ? FS.BAND_FRAC : 0.94) / 3;
-        const slotSize = Math.max(8, Math.min(cellSize,
+        const slotSize = Math.max(8, Math.min(baseCell,
                                   plotBandH * (FS.SLOT_FRAC !== undefined ? FS.SLOT_FRAC : 0.62)));
 
         // Slot-derived sizes ride this: it equals `scale`, expressed against the
         // reference slot so slot-space numbers convert without a second factor.
-        const platformScale = cellSize / P.SLOT_SIZE;
+        const platformScale = baseCell / P.SLOT_SIZE;
 
         // ── All content sizes that must scale with cellSize ───────────────────
         // Cell gap
@@ -323,6 +337,19 @@ class GameScene extends Phaser.Scene {
         // by sH drifts up toward the screen's edge, away from the grid it
         // belongs to.
         const panHReal    = ROWS * cellSize + (ROWS - 1) * cellGap + 2 * panPad;
+        // LANDSCAPE: THE COLUMN AS ONE BLOCK, CENTRED. Coin, panel and button
+        // keep their design spacing (× scale) to each other, and whatever
+        // height the half has left over goes equally above and below — not
+        // into the gap between grid and button, where it read as a missing
+        // piece. Portrait keeps the button anchored low, in thumb reach.
+        if (!isP && LY.LANDSCAPE_CENTER !== false) {
+            const aboveRef = coinHRef / 2 + coinGapRef;                         // coin top -> panel top
+            const belowRef = spawnBtnLogHalfRef + btnGridRef - panPadRef;       // panel bottom -> button centre
+            const blockH   = (aboveRef + belowRef + spawnBtnLogHalfRef) * scale + panHReal;
+            const top      = partA.y + Math.max(0, (partA.height - blockH) / 2);
+            panelCenterY   = top + aboveRef * scale + panHReal / 2;
+            buttonCenterY  = panelCenterY + panHReal / 2 + belowRef * scale;
+        }
         const coinCenterY = panelCenterY - panHReal / 2 - coinGapRef * scale;
 
         // Battery icon + level text inside grid cells (and platform slots).
@@ -435,7 +462,7 @@ class GameScene extends Phaser.Scene {
             panPad, spawnBtnDisplayH, spawnBtnDisplayW, spawnBtnLogicalHalf: spawnBtnLogHalf,
             partA, partB,
             platformScale,
-            sW, sH, scale,
+            sW, sH, scale: baseScale, colScale: scale,
             panelCenterY, buttonCenterY, coinCenterY, slotSize, plotBandH,
             // Battery / cell content
             batteryDisplayW, batteryDisplayH, batteryYOffset, levelTextYOffset, levelTextSize,
@@ -5335,8 +5362,8 @@ class GameScene extends Phaser.Scene {
         // half does not have to spare.
         const C     = CONFIG.CELL;
         const panel = this.gridPanel = this.add.graphics().setDepth(3.4);   // over the farm slots (3)
-        const radius = Math.round(C.GRID_PANEL_RADIUS * L.scale);
-        const border = Math.max(1, Math.round(C.GRID_PANEL_BORDER_WIDTH * L.scale));
+        const radius = Math.round(C.GRID_PANEL_RADIUS * L.colScale);
+        const border = Math.max(1, Math.round(C.GRID_PANEL_BORDER_WIDTH * L.colScale));
         panel.fillStyle(hexColor(C.GRID_PANEL_COLOR), 1);
         panel.fillRoundedRect(cx - panW / 2, cy - panH / 2, panW, panH, radius);
         if (border > 0) {
@@ -5382,7 +5409,7 @@ class GameScene extends Phaser.Scene {
         // Unified: derive panel centre from gridStartX/Y (set by createGrid)
         const panCX   = this.gridStartX - this.CELL_SIZE / 2 + gridW / 2;
         const panCY   = this.gridStartY - this.CELL_SIZE / 2 + gridH / 2;
-        const coinY     = L.coinCenterY;            // fixed fraction of partA.height (× sH)
+        const coinY     = L.coinCenterY;            // hangs off the panel's top edge
         const rightEdge = panCX + panW / 2;         // right-aligned to grid panel (relational)
 
         // Icon right edge aligns with grid panel right edge; scaled gap to text
