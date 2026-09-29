@@ -1329,20 +1329,13 @@ var CONFIG = {
         },
 
         // ── A HARVESTED PLANT LEAVES A STUMP ─────────────────────────────────
-        // Every plant, once its share is picked, is simply gone and a stump
-        // stands where it was: graphics/crop/<FILE>.webp, one frame's size of
-        // art (128 wide, like a crop sheet's frame) drawn at the plant's own
-        // scale, standing on its foot. No shrink, no greying — the stump IS
-        // the harvested plant. Its shadow is cut down to SHADOW_FRAC of the
-        // plant's, a stump casting a small one. Off (or the file missing), a
-        // finished plant goes back to the SPENT look below.
-        //
-        // KEEP set (0–1): no stump art at all — the plant itself is cut down to
-        // its bottom KEEP of its height, so every crop's stump is its own base,
-        // over a shadow cut to SHADOW_FRAC. null for the FILE stump above.
+        // Every plant, once its share is picked, is cut down where it stands:
+        // no stump art — the plant itself is cropped to its bottom KEEP of its
+        // height (and the middle KEEP_W of its width), so every crop's stump
+        // is its own base, over a shadow cut to SHADOW_FRAC. Off (or KEEP not
+        // set), a finished plant goes back to the SPENT look below.
         STUMP: {
             ENABLED:     true,
-            FILE:        'stump',
             SHADOW_FRAC: 0.5,
             KEEP:        0.15,  // the tallest a stump is, × the plant's height…
             KEEP_MIN:    0.10,  // …and the shortest: each plant picks its own

@@ -2768,11 +2768,11 @@ class GameScene extends Phaser.Scene {
         return done;
     }
 
-    // Whether harvested plants leave a stump — switched on and the art in hand.
+    // Whether harvested plants leave a stump — switched on, with a KEEP to
+    // cut the plant down to. There is no stump art: the stump is the plant.
     _stumpOn() {
         const ST = (CONFIG.CROPS || {}).STUMP || {};
-        if (ST.ENABLED === false) return false;
-        return ST.KEEP > 0 || this.textures.exists('crop_stump');
+        return ST.ENABLED !== false && ST.KEEP > 0;
     }
 
     // A HARVESTED PLANT BECOMES A STUMP: the plant (and any fruit still on it)
@@ -2790,7 +2790,7 @@ class GameScene extends Phaser.Scene {
             // CUT DOWN TO ITS OWN BASE (STUMP.KEEP): the plant stays, cropped
             // to its bottom KEEP — still on its foot, since it stands from its
             // bottom edge. Its fruit goes; its shadow is redrawn at SHADOW_FRAC.
-            if (ST.KEEP > 0 && p.plant && p.plant.scene) {
+            if (p.plant && p.plant.scene) {
                 for (const o of [p.fruit, p.shadow]) {
                     if (!o || !o.scene) continue;
                     this.tweens.killTweensOf(o);
@@ -2857,24 +2857,7 @@ class GameScene extends Phaser.Scene {
                 p.stumpStroke = this._stumpStroke(p, pl, cut);
                 p.plant = null;
                 if (reward) this._popStump(p);
-                return;
             }
-            for (const o of [p.plant, p.fruit, p.shadow]) {
-                if (!o || !o.scene) continue;
-                this.tweens.killTweensOf(o);
-                o.destroy();
-            }
-            if (crop.plant === p.plant) crop.plant = null;
-            p.plant = p.fruit = null;
-            const src = this.textures.get('crop_stump').get();
-            p.shadow = this._plantShadow(p.name, p.cx, p.baseY,
-                p.w * (ST.SHADOW_FRAC !== undefined ? ST.SHADOW_FRAC : 0.3),
-                this._plantDepth(p.k, 'SHADOW'));
-            p.stump = this.add.image(p.cx, p.baseY, 'crop_stump').setOrigin(0.5, 1)
-                .setDisplaySize(src.width * p.pf, src.height * p.pf).setFlipX(!!p.flip)
-                .setDepth(this._plantDepth(p.k, 'PLANT'));
-            p.stumpStroke = this._stumpStroke(p, p.stump, null);
-            if (reward) this._popStump(p);
         };
         if (delay > 0) this.time.delayedCall(delay, swap);
         else swap();
