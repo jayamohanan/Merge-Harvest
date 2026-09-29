@@ -767,6 +767,15 @@ var CONFIG = {
         // or the file named here where it differs from the crop's name.
         ICON_DIR:   'graphics/crop/icon/',
         ICON_FILES: { 'chilly-pepper': 'chilly' },
+        // PREVIEW ONLY: every section's card, one at a time, where the game
+        // shows it — ‹ › or the arrow keys to step through. Covers the farm
+        // info and crop; does nothing. ENABLED: false to play.
+        PREVIEW: {
+            ENABLED: false,
+            VIEW:    'open',          // 'open' — every field unshaded, all crops
+                                      // shown; 'start' — as the section opens in play
+            DEPTH:   60,
+        },
         // ── HOW EACH SECTION'S FIELDS ARE LAID OUT ────────────────────────
         // 'treemap' — squarified rectangles; 'angled' — tilted straight cuts,
         // quadrilaterals and wedges (CUTS, _angledCuts); 'voronoi' — each
@@ -1232,6 +1241,42 @@ var CONFIG = {
             // of every level, whatever COUNTS says — to see how a long row
             // looks. null for the real game. At most DEPTH.ROW_MAX.
             DEBUG_COUNT: null,
+            // PREVIEW ONLY: a panel over the farm half showing every plot's
+            // row as COUNT stumps of CROP, where a real level would stand
+            // them, with a line through each row's feet — for lining the three
+            // rows up. Covers the field; does nothing. ENABLED: false to play.
+            STUMP_PREVIEW: {
+                ENABLED:     false,
+                CROP:        'tomato',
+                COUNT:       10,
+                GUIDES:      true,
+                GUIDE_COLORS: [0xd0342c, 0x2c7bd0, 0x2ca24a],   // plot 1, 2, 3
+                // Flat lines from row 1's front and back stumps to the right
+                // edge — the level the other rows are read against.
+                LEVEL_LINES: true,
+                LEVEL_LINE_COLOR: 0x2b2013,
+                PANEL_ALPHA: 1,
+                DEPTH:       60,
+            },
+            // PREVIEW ONLY: a panel over the farm half with all three rows
+            // standing as whole plants of CROP, COUNTS to a row, where a real
+            // level would stand them. A bar at its top left changes the crop
+            // and each row's count live. Covers the field; does nothing.
+            // ENABLED: false to play.
+            CROP_PREVIEW: {
+                ENABLED:     false,
+                CROP:        'tomato',
+                COUNTS:      [10, 10, 10],   // plot 1, 2, 3 — at most DEPTH.ROW_MAX
+                // THE PLANTS' ROOM — the band between the farm info and the
+                // slots — shaded light under them, with an outline round what
+                // the rows actually take and the share of it. false: plants only.
+                AREA:        true,
+                AREA_COLOR:  '#fff3d6',
+                AREA_ALPHA:  0.7,
+                USED_COLOR:  '#d0342c',
+                PANEL_ALPHA: 1,
+                DEPTH:       62,
+            },
             PER_PLANT_FIGURE: false,
             // ONE-POINT PERSPECTIVE: every row's front plant stands on its
             // slot; each plant behind moves SCALE_STEP of the way toward a
