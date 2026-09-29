@@ -129,7 +129,7 @@ var CONFIG = {
         BATCH:    4,        // icons per tick, so ~4.5 per second at the default
     },
 
-    BATTERY_START_LEVEL:20,
+    BATTERY_START_LEVEL: 1,
     // THE ECONOMY — on the same 2.5× scale as the crop and piggy tables (see
     // THE ECONOMY'S RULES in cropData.js).
     ECONOMY: {
