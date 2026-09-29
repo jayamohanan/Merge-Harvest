@@ -60,29 +60,6 @@ var CONFIG = {
         REF_H_COLUMN: 0,
     },
 
-    // Play / pause, top-right of the screen. The icon shows what pressing it
-    // will DO — a pause bar while running, a play arrow while stopped — which is
-    // the convention every media player uses.
-    // ── PAUSE ─────────────────────────────────────────────────────────────────
-    // A DEVELOPMENT TOOL, not a player feature — it freezes the world so a
-    // moment can be looked at. There is no button for it: an icon sitting in the
-    // corner of a casual game invites a tap, and a player who pauses by accident
-    // and cannot see why nothing moves has been given a bug.
-    //
-    // KEY is the physical key that toggles it, by Phaser's name. The backtick is
-    // the usual choice for a hidden toggle and is a good one here: it is the
-    // games industry's console key, it carries no browser shortcut, and nothing
-    // in this game reads the keyboard at all — so there is no combination it can
-    // interrupt. Avoid anything the browser owns (F5, F11, F12, Escape, and most
-    // Ctrl or Cmd pairs) and anything a player might lean on (space, arrows).
-    //
-    // Keyboard only, so it does not exist on a phone. That is the right side of
-    // the trade for a tool nobody but you should find.
-    PAUSE: {
-        ENABLED: true,
-        KEY:     'BACKTICK',
-    },
-
     // ── How figures are written ───────────────────────────────────────────────
     // Every number the player sees goes through _bigNum. Full figures while they
     // fit, a unit once they do not — the same rule everywhere, so two readouts

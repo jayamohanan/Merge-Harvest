@@ -902,7 +902,7 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        this._buildPauseKey();
+        this.gamePaused = false;   // frozen only while an ad plays (_setPaused)
         this._buildSplitLine();
 
         // POKI: gameplayStart ON THE PLAYER'S FIRST INPUT — the first tap or
@@ -5160,43 +5160,6 @@ class GameScene extends Phaser.Scene {
         return sep ? whole.replace(/\B(?=(\d{3})+(?!\d))/g, sep) : whole;
     }
 
-    // ── Play / pause ─────────────────────────────────────────────────────────
-    // THE PAUSE KEY. No button — see CONFIG.PAUSE for why.
-    //
-    // Bound to the physical key rather than the character it types, so it lands
-    // in the same place on a keyboard that puts a different symbol there.
-    _buildPauseKey() {
-        const P = CONFIG.PAUSE || {};
-        this.gamePaused = false;
-        if (P.ENABLED === false || !this.input || !this.input.keyboard) return;
-        const code = Phaser.Input.Keyboard.KeyCodes[P.KEY || 'BACKTICK'];
-        if (code === undefined) {
-            console.warn(`[pause] no such key "${P.KEY}" — pause is unbound`);
-            return;
-        }
-        this.input.keyboard.on('keydown', (e) => {
-            // Only the bare key. Held with a modifier it belongs to the browser
-            // or the operating system, and stealing it there would be rude.
-            if (e.keyCode !== code || e.ctrlKey || e.metaKey || e.altKey) return;
-            if (this.isWatchingAd || this._resuming) return;   // an ad owns the pause while it runs
-            if (!this.gamePaused) {
-                this._setPaused(true);
-                pokiGameplay(false);
-                return;
-            }
-            // POKI: A COMMERCIAL BREAK ON THE WAY BACK INTO PLAY — the only
-            // place the rules allow one: exiting a pause, before gameplayStart.
-            // The world stays frozen through it. Poki decides whether an ad
-            // actually shows; without the SDK it resolves at once.
-            this._resuming = true;
-            pokiCommercialBreak().then(() => {
-                this._resuming = false;
-                this._setPaused(false);
-                if (pokiFirstInput) pokiGameplay(true);
-            });
-        });
-    }
-
     // Stop the world, or start it again.
     //
     // update() returning early is only half of it. Tweens, the clock, the
@@ -5207,8 +5170,8 @@ class GameScene extends Phaser.Scene {
     _setPaused(on) {
         if (this.gamePaused === on) return;
         this.gamePaused = on;
-        // Poki's gameplay events are sent by the CALLERS (the pause key, the
-        // ads), since each has its own order to send them in.
+        // Poki's gameplay events are sent by the CALLERS (the ads), in the
+        // order each needs them.
 
         if (on) { this.tweens.pauseAll(); this.anims.pauseAll(); }
         else    { this.tweens.resumeAll(); this.anims.resumeAll(); }
@@ -6399,7 +6362,7 @@ class GameScene extends Phaser.Scene {
         this.isWatchingAd = true;  // Block all interactions during ad
         // THE WORLD STOPS FOR THE AD — harvest tick, tweens mid-flight, every
         // timer — and picks up exactly where it was once the ad is over, the
-        // way Poki requires. The same freeze as the dev pause key.
+        // way Poki requires.
         this._setPaused(true);
         pokiGameplay(false);
         const W = this.cameras.main.width;
@@ -6974,17 +6937,8 @@ function pokiGameplay(on) {
     pokiCall(on ? 'gameplayStart' : 'gameplayStop');
 }
 // The player's first input has happened — gameplayStart may be sent. Before
-// it, nothing (not even resuming from a pause) may start gameplay.
+// it, nothing (not even the end of an ad) may start gameplay.
 let pokiFirstInput = false;
-
-// A COMMERCIAL BREAK. Resolves when it is over, ad or not — Poki decides
-// whether one plays. No SDK: resolves at once.
-function pokiCommercialBreak() {
-    if (!pokiReady) return Promise.resolve();
-    try {
-        return Promise.resolve(window.PokiSDK.commercialBreak(() => {})).catch(() => {});
-    } catch (e) { console.warn('[poki] commercialBreak failed', e); return Promise.resolve(); }
-}
 
 // A REWARDED BREAK. Resolves true only if Poki says the ad was watched.
 function pokiRewardedBreak() {
