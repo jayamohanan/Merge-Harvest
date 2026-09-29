@@ -45,7 +45,6 @@ rsync -a \
   --exclude '*.md' \
   --exclude 'sounds' \
   --exclude 'untitled folder' \
-  --exclude '/graphics/ui/piggy_bank2.png' \
   ./ "$OUT/"
 
 # ── NO DEBUG OVERLAYS IN THE BUILD ─────────────────────────────────────────────

@@ -57,6 +57,14 @@ class AssetManager {
         return promise;
     }
 
+    // A CROP'S SHEET, fetched and cut (see _sliceCrops). Resolves either
+    // way, like ensureImage: a sheet that fails simply is not there.
+    ensureCrop(name) {
+        if (!name || this.scene.textures.exists(`crop_${name}`)) return Promise.resolve();
+        return this.ensureImage(cropSrcKey(name), cropFileOf(name))
+            .then(() => { if (this.scene.sys && this.scene.sys.isActive()) this.scene._sliceCrops(); });
+    }
+
     ensureBattery(level) {
         const key = `battery${level}`;
         const data = getBatteryData(level);
@@ -1467,10 +1475,31 @@ class GameScene extends Phaser.Scene {
     // second one that forgot the wrap would come up empty at level 5 and the
     // farm half would silently build with no plants in it.
     _cropForLevel(level) {
-        const names = (CONFIG.CROPS || {}).LEVELS || [];
-        if (!names.length) return null;
-        const lvl = level >= 1 ? Math.floor(level) : 1;
-        return names[(lvl - 1) % names.length];
+        return cropForLevel(level);
+    }
+
+    // THE NEXT CROPS, IN THE BACKGROUND — the sheets for the PREFETCH_AHEAD
+    // levels after `lvl`. Never during the opening load: that is what Poki
+    // times, so these wait until the loading screen is done. Called on every
+    // level build; anything already loaded or in flight is skipped.
+    _prefetchCrops(lvl) {
+        const C = CONFIG.CROPS || {};
+        if (C.ENABLED === false || !this.assets) return;
+        if (!loadingScreenDone) {
+            this.time.delayedCall(500, () => this._prefetchCrops(lvl));
+            return;
+        }
+        const n = C.PREFETCH_AHEAD !== undefined ? C.PREFETCH_AHEAD : 2;
+        for (let l = lvl + 1; l <= lvl + n; l++) this.assets.ensureCrop(this._cropForLevel(l));
+    }
+
+    // RUN `fn` ONCE LEVEL `lvl`'S SHEET IS IN — at once if it already is,
+    // which is the usual case (_prefetchCrops has had the whole level). If
+    // not, it is asked for now and `fn` waits for it.
+    _whenCropReady(lvl, fn) {
+        const name = this._cropForLevel(lvl);
+        if (!name || this.textures.exists(`crop_${name}`)) { fn(); return; }
+        this.assets.ensureCrop(name).then(() => { if (this.sys.isActive()) fn(); });
     }
 
     // ── Cutting the crop sheets ──────────────────────────────────────────────
@@ -1931,6 +1960,7 @@ class GameScene extends Phaser.Scene {
         if (C.ENABLED === false || !this.farmRows) return;
         const lvl  = level !== undefined ? level : this.cropLevel;
         const name = this._cropForLevel(lvl);
+        this._prefetchCrops(lvl);
         if (!name || !this.textures.exists(`crop_${name}`)) return;
 
         const s = this.layoutConfig.scale;
@@ -3363,9 +3393,18 @@ class GameScene extends Phaser.Scene {
             this._clearCrops(() => {
                 // The field map shows the level done and unlocks the next — see
                 // _advanceFieldMap — and the next level grows in once it has gone.
+                // THE NEXT SHEET FIRST (_whenCropReady) — normally already in,
+                // and the turn is not held up at all. The turn is over only
+                // once both the card is done AND the new crop is built.
+                let built = false, carded = false;
                 this._advanceFieldMap(this.cropLevel,
-                    () => { this.cropLevel++; this.buildCrops(undefined, true); },
-                    () => { this._levelTurning = false; });
+                    () => this._whenCropReady(this.cropLevel + 1, () => {
+                        this.cropLevel++;
+                        this.buildCrops(undefined, true);
+                        built = true;
+                        if (carded) this._levelTurning = false;
+                    }),
+                    () => { carded = true; if (built) this._levelTurning = false; });
             });
         });
     }

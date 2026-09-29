@@ -493,7 +493,7 @@ var CONFIG = {
         FADE_MS:   260,      // in when it appears, out when a slot is filled
     },
 
-    // THE PIG, TO THE LEFT OF THE ARROW. graphics/ui/merge-grid/piggy_icon.png
+    // THE PIG, TO THE LEFT OF THE ARROW. graphics/ui/merge-grid/piggy_icon.webp
     // (see assets.js) — an outline-only pig, drawn as-is (no tint) and placed just
     // behind where the arrow's
     // stroke begins, so together "pig, arrow, slot" reads as "drag this here"
@@ -769,7 +769,7 @@ var CONFIG = {
         // THE CROP ICONS shown in a field as it unlocks: <ICON_DIR><crop>-icon.webp,
         // or the file named here where it differs from the crop's name.
         ICON_DIR:   'graphics/crop/icon/',
-        ICON_FILES: { 'chilly-pepper': 'chilly' },
+        ICON_FILES: {},
         // PREVIEW ONLY: every section's card, one at a time, where the game
         // shows it — ‹ › or the arrow keys to step through. Covers the farm
         // info and crop; does nothing. ENABLED: false to play.
@@ -994,6 +994,10 @@ var CONFIG = {
         ENABLED: true,
         DIR: 'graphics/crop/',
         EXT: '.webp',
+        // Only START_LEVEL's sheet is in the opening load (assets.js). Once
+        // the loading screen is done, the sheets for this many levels after
+        // the current one are fetched in the background, on every level.
+        PREFETCH_AHEAD: 2,
         // ONE FRAME'S WIDTH in the file. The HEIGHT is not declared: a frame is
         // as tall as the file, which varies per crop, and it is read off the
         // image when the sheet is cut (_sliceCrops). A height written here would
@@ -1618,7 +1622,7 @@ var CONFIG = {
                 // and fading as they fall. Sized against the bank's own
                 // height so they stay in proportion to it.
                 //
-                // COLORS ARE SAMPLED FROM graphics/ui/piggy_bank.png: the light
+                // COLORS ARE SAMPLED FROM graphics/ui/piggy_bank.webp: the light
                 // grain, the body, the shaded underside and its dark outline.
                 CHIPS: {
                     ENABLED: true,
