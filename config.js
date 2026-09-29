@@ -118,7 +118,7 @@ var CONFIG = {
         BATCH:    4,        // icons per tick, so ~4.5 per second at the default
     },
 
-    BATTERY_START_LEVEL:1,
+    BATTERY_START_LEVEL:10,
     // THE ECONOMY — on the same 2.5× scale as the crop and piggy tables (see
     // THE ECONOMY'S RULES in cropData.js).
     ECONOMY: {
@@ -1233,9 +1233,20 @@ var CONFIG = {
             // looks. null for the real game. At most DEPTH.ROW_MAX.
             DEBUG_COUNT: null,
             PER_PLANT_FIGURE: false,
-            STEP_X:     0.20,   // each plant behind: this × a plant's width right…
-            STEP_Y:     0.12,   // …this × its height up…
-            SCALE_STEP: 0.05,   // …and this much smaller than the one in front
+            // ONE-POINT PERSPECTIVE: every row's front plant stands on its
+            // slot; each plant behind moves SCALE_STEP of the way toward a
+            // vanishing point above the middle of the farm and shrinks by the
+            // same fraction — see _rowPlacementPerspective.
+            //
+            // How high that point is, in plant heights above the foot line.
+            // Higher: each plant behind rises more — a gentler, more top-down
+            // field. Lower: flatter rows that converge harder.
+            VP_RISE:    3,
+            // Each plant behind nudged alternately right and left by this ×
+            // its own width, so the middle row (which recedes straight up)
+            // peeks out past the one in front. 0 for straight lines.
+            ZIGZAG:     0.15,
+            SCALE_STEP: 0.05,   // per plant behind: how far toward the point, and how much smaller
             // Every other plant in a row mirrored, fruit and stump with it — a
             // row of one picture reads as copies until they face different ways.
             ALTERNATE_FLIP: true,
@@ -1243,30 +1254,6 @@ var CONFIG = {
             // a line of identical heights. Height only; its fruit stretches
             // with it. 0 for all the same.
             HEIGHT_JITTER: 0.08,
-            // The diagonal end to end, in plant widths, at most — a longer row
-            // packs its plants closer (STEP_Y shrinks with STEP_X) instead of
-            // being shrunk to fit. 1.2 leaves rows of up to 7 at the full step.
-            SPAN_MAX:   1.2,
-            // How far past its column a row's FRAMES may reach. A plant's frame
-            // has empty margin either side of the plant, so a little over 1
-            // still keeps the plants themselves clear of the next plot's.
-            FIT_SLACK:  1.1,
-            // PERSPECTIVE: the sideways step, per plot left to right, as a
-            // share of the full one. Flat rows stepping right by the same
-            // amount do not look parallel; each one further right steps a
-            // little less. Plant size and the upward step are not touched.
-            PLOT_STEP_X: [1, 0.65, 0.3],   // (only row 1's shapes the rows now —
-                                           // see BACK_GAP_FRAC)
-            // THE ROWS' SPACING, set once for the full 3 × ROW_MAX field and
-            // then used by EVERY level: each row gets a front position and one
-            // fixed x/y step per plant behind, and a shorter row is just the
-            // first few plants of its full row. These two shape that field —
-            // rows 2 and 3 follow row 1 one gap and two to its right, the gap
-            // at the back plant BACK_GAP_FRAC of the front one.
-            BACK_GAP_FRAC: 0.85,
-            // …and the front gap itself, as a share of what the plots' own
-            // layout gives. Below 1 moves rows 2 and 3 left, toward row 1.
-            FRONT_GAP_FRAC: 0.85,
             // The ones not yet being worked — 1 is fully solid, lower dims them
             // until their turn comes.
             WAITING_ALPHA: 1,
@@ -1319,6 +1306,15 @@ var CONFIG = {
             SLANT_DEG:   30,    // the steepest cut…
             SLANT_MIN_DEG: 10,  // …and the shallowest: each plant picks its
                                 // own angle between the two
+            // A LINE ALONG THE TOP OF THE CUT: a dark copy of the stump raised
+            // WIDTH art pixels behind it, so only the band above shows.
+            // Scales with the plant. ENABLED false for none.
+            STROKE: {
+                ENABLED: true,
+                WIDTH:   1,           // art px (a frame is 128 wide)
+                COLOR:   '#052D03', //2b2013
+                ALPHA:   1,
+            },
         },
 
         // TINT AND ALPHA TOGETHER. Alpha alone lets the ground through and reads
