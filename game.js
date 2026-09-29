@@ -905,6 +905,13 @@ class GameScene extends Phaser.Scene {
         this._buildPauseKey();
         this._buildSplitLine();
 
+        // POKI: gameplayStart ON THE PLAYER'S FIRST INPUT — the first tap or
+        // click anywhere, which is also what dismisses the start tutorial.
+        this.input.once('pointerdown', () => {
+            pokiFirstInput = true;
+            if (!this.gamePaused && !this.isWatchingAd) pokiGameplay(true);
+        });
+
         // Everything the opening view needs is up.
         finishLoadingScreen();
     }
@@ -5171,8 +5178,22 @@ class GameScene extends Phaser.Scene {
             // Only the bare key. Held with a modifier it belongs to the browser
             // or the operating system, and stealing it there would be rude.
             if (e.keyCode !== code || e.ctrlKey || e.metaKey || e.altKey) return;
-            if (this.isWatchingAd) return;   // the ad owns the pause while it runs
-            this._setPaused(!this.gamePaused);
+            if (this.isWatchingAd || this._resuming) return;   // an ad owns the pause while it runs
+            if (!this.gamePaused) {
+                this._setPaused(true);
+                pokiGameplay(false);
+                return;
+            }
+            // POKI: A COMMERCIAL BREAK ON THE WAY BACK INTO PLAY — the only
+            // place the rules allow one: exiting a pause, before gameplayStart.
+            // The world stays frozen through it. Poki decides whether an ad
+            // actually shows; without the SDK it resolves at once.
+            this._resuming = true;
+            pokiCommercialBreak().then(() => {
+                this._resuming = false;
+                this._setPaused(false);
+                if (pokiFirstInput) pokiGameplay(true);
+            });
         });
     }
 
@@ -5186,7 +5207,8 @@ class GameScene extends Phaser.Scene {
     _setPaused(on) {
         if (this.gamePaused === on) return;
         this.gamePaused = on;
-        pokiGameplay(!on);
+        // Poki's gameplay events are sent by the CALLERS (the pause key, the
+        // ads), since each has its own order to send them in.
 
         if (on) { this.tweens.pauseAll(); this.anims.pauseAll(); }
         else    { this.tweens.resumeAll(); this.anims.resumeAll(); }
@@ -6332,12 +6354,45 @@ class GameScene extends Phaser.Scene {
         }
     }
 
+    // THE LEVEL-UP-ALL REWARD, BEHIND A REWARDED AD. Poki's rewardedBreak:
+    // gameplay stopped and the world frozen for it, and the reward given ONLY
+    // if it reports success — an ad blocker, no fill or a skipped ad give
+    // nothing, which Poki requires. Without the SDK at all: the mock ad on a
+    // local dev server (to test the flow), and no reward anywhere else — an
+    // ad blocker on the live site removes the SDK, and must not be a free
+    // upgrade.
     levelUpAll() {
         if (this.isWatchingAd) return;  // Prevent multiple ad triggers
-        // Show mock ad before upgrading
-        this.showMockAd(() => {
-            this.performLevelUpAll();
-        });
+        if (pokiReady) {
+            this.isWatchingAd = true;
+            this._setPaused(true);
+            pokiGameplay(false);
+            pokiRewardedBreak().then((ok) => {
+                this.isWatchingAd = false;
+                this._setPaused(false);
+                if (pokiFirstInput) pokiGameplay(true);
+                if (ok) this.performLevelUpAll();
+                else this._adUnavailable();
+            });
+            return;
+        }
+        if (isLocalDev()) { this.showMockAd(() => this.performLevelUpAll()); return; }
+        this._adUnavailable();
+    }
+
+    // No ad to show, so no reward: said briefly over the button rather than
+    // the tap simply doing nothing.
+    _adUnavailable() {
+        const b = this.levelUpButton;
+        if (!b || !b.scene) return;
+        const s = this.layoutConfig.colScale || this.layoutConfig.scale;
+        const t = this.add.text(b.x, b.y - (this.layoutConfig.spawnBtnDisplayH || 60) * 0.6,
+            (CONFIG.AD || {}).UNAVAILABLE_TEXT || 'No ad available right now', {
+                fontSize: Math.round(22 * s) + 'px', fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
+                color: '#fff6e0', stroke: '#3b2a17', strokeThickness: Math.max(2, Math.round(3 * s)),
+            }).setOrigin(0.5, 1).setDepth(101);
+        this.tweens.add({ targets: t, y: t.y - 24 * s, alpha: 0, delay: 900, duration: 500,
+            onComplete: () => t.destroy() });
     }
 
     showMockAd(onComplete) {
@@ -6346,6 +6401,7 @@ class GameScene extends Phaser.Scene {
         // timer — and picks up exactly where it was once the ad is over, the
         // way Poki requires. The same freeze as the dev pause key.
         this._setPaused(true);
+        pokiGameplay(false);
         const W = this.cameras.main.width;
         const H = this.cameras.main.height;
         const A = CONFIG.AD;
@@ -6399,6 +6455,7 @@ class GameScene extends Phaser.Scene {
                 timerText.destroy();
                 this.isWatchingAd = false;  // Re-enable interactions
                 this._setPaused(false);     // the world carries on from where it stopped
+                if (pokiFirstInput) pokiGameplay(true);
                 onComplete();  // Instant upgrade after ad
             }
         }, 1000);
@@ -6886,9 +6943,9 @@ function finishLoadingScreen() {
     loadTimingReport();
     setLoadingProgress(1);
     loadingScreenDone = true;
-    // There is no menu: the farm is playable the moment it is built.
+    // gameplayStart waits for the player's FIRST INPUT, not the load — Poki's
+    // rule. See the scene's first pointerdown (create) and pokiFirstInput.
     pokiCall('gameLoadingFinished');
-    pokiGameplay(true);
     const screen = typeof document !== 'undefined' && document.getElementById('loading-screen');
     if (!screen) return;
     // A beat at 100% before fading, so the full bar is actually seen — create()
@@ -6916,6 +6973,43 @@ function pokiGameplay(on) {
     pokiPlaying = on;
     pokiCall(on ? 'gameplayStart' : 'gameplayStop');
 }
+// The player's first input has happened — gameplayStart may be sent. Before
+// it, nothing (not even resuming from a pause) may start gameplay.
+let pokiFirstInput = false;
+
+// A COMMERCIAL BREAK. Resolves when it is over, ad or not — Poki decides
+// whether one plays. No SDK: resolves at once.
+function pokiCommercialBreak() {
+    if (!pokiReady) return Promise.resolve();
+    try {
+        return Promise.resolve(window.PokiSDK.commercialBreak(() => {})).catch(() => {});
+    } catch (e) { console.warn('[poki] commercialBreak failed', e); return Promise.resolve(); }
+}
+
+// A REWARDED BREAK. Resolves true only if Poki says the ad was watched.
+function pokiRewardedBreak() {
+    if (!pokiReady) return Promise.resolve(false);
+    try {
+        return Promise.resolve(window.PokiSDK.rewardedBreak(() => {}))
+            .then((ok) => !!ok).catch(() => false);
+    } catch (e) { console.warn('[poki] rewardedBreak failed', e); return Promise.resolve(false); }
+}
+
+// Running on the developer's own machine — where the mock ad stands in.
+function isLocalDev() {
+    if (typeof location === 'undefined') return false;
+    return location.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/.test(location.hostname);
+}
+
+// THE PARENT PAGE MUST NOT SCROLL under the game — arrow keys, space and the
+// mouse wheel would otherwise scroll Poki's page around it. Poki's rule.
+if (typeof window !== 'undefined') {
+    window.addEventListener('keydown', (ev) => {
+        if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', ' '].includes(ev.key)) ev.preventDefault();
+    });
+    window.addEventListener('wheel', (ev) => ev.preventDefault(), { passive: false });
+}
+
 // Resolves either way. The timeout is there so a hung init can never hold the
 // game on the loading screen — Poki would rather lose a metric than a player.
 function initPoki() {
