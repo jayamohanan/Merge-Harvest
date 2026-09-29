@@ -3545,13 +3545,18 @@ class GameScene extends Phaser.Scene {
             ? (U.PULSE_MS !== undefined ? U.PULSE_MS : 520)
               + (U.AFTER_MS !== undefined ? U.AFTER_MS : 1000)   // …and a second to take it in
             : hold;
-        const hide = (card) => later(unlockMs + iconMs, () =>
+        const hide = (card) => later(unlockMs + iconMs, () => {
+            this._hideMapTitle(card, outMs);
             this.tweens.add({ targets: card.box, alpha: 0, duration: outMs,
-                onComplete: () => { if (card.box.scene) card.box.setVisible(false); turn(); done(); } }));
+                onComplete: () => { if (card.box.scene) card.box.setVisible(false); turn(); done(); } });
+        });
 
         this.tweens.killTweensOf(map.box);
         map.box.setVisible(true).setAlpha(0);
         this.tweens.add({ targets: map.box, alpha: 1, duration: inMs });
+        // ITS NAME OVER IT — every showing of a card after its first, which
+        // is the section's intro (_introSection) and has the name inside.
+        this._showMapTitle(map, inMs);
         // THE FARM INFO STEPS ASIDE while the card is up — one thing to read
         // at a time. It needs no fading back: the level turn's reel puts the
         // blocks up again itself (see _updateFarmInfo).
@@ -3579,6 +3584,7 @@ class GameScene extends Phaser.Scene {
             fresh.setCurrent(next - 1);
             fresh.box.setVisible(true).setAlpha(0);
             this.fieldMini = fresh;
+            this._hideMapTitle(map, swapMs);
             this.tweens.add({ targets: map.box, alpha: 0, duration: swapMs,
                 onComplete: () => { if (map.box.scene) map.box.destroy(); } });
             this.tweens.add({ targets: fresh.box, alpha: 1, duration: swapMs });
@@ -3735,6 +3741,37 @@ class GameScene extends Phaser.Scene {
         });
     }
 
+    // THE SECTION'S NAME OVER ITS CARD — "Fields 1–5" — in the band the farm
+    // info leaves while the card is up (it steps aside, see _advanceFieldMap),
+    // bottom-aligned just over the card's top edge. FIELD_MAP.SECTION.TITLE.
+    _showMapTitle(map, ms) {
+        const T = ((CONFIG.FIELD_MAP || {}).SECTION || {}).TITLE || {};
+        this._hideMapTitle(map, 0);
+        if (T.ENABLED === false || !map || !map.box.scene) return;
+        const s = this.layoutConfig.scale;
+        const r = this._fieldMiniRect();
+        const size = T.SIZE !== undefined ? T.SIZE : 30;
+        const t = this.add.text(r.x + r.w / 2, r.y - (T.GAP !== undefined ? T.GAP : 6) * s,
+            this._sectionName(map.batch), {
+                fontSize: Math.round(size * s) + 'px', fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
+                color: T.COLOR || '#fff6e0', stroke: T.EDGE || '#3b2a17',
+                strokeThickness: Math.max(2, Math.round(size * s * 0.13)),
+            }).setOrigin(0.5, 1).setAlpha(0)
+            .setDepth((map.box.depth || 0) + 0.01);
+        if (t.width > r.w) t.setScale(r.w / t.width);
+        this.tweens.add({ targets: t, alpha: 1, duration: ms || 0 });
+        map.title = t;
+    }
+    _hideMapTitle(map, ms) {
+        const t = map && map.title;
+        if (!t) return;
+        map.title = null;
+        if (!t.scene) return;
+        this.tweens.killTweensOf(t);
+        if (!(ms > 0)) { t.destroy(); return; }
+        this.tweens.add({ targets: t, alpha: 0, duration: ms, onComplete: () => t.destroy() });
+    }
+
     // A section, by its fields' numbers: "Fields 1–5". Plain numbers rather
     // than place names — they say at a glance where in the run it is.
     _sectionName(batch) {
@@ -3862,6 +3899,7 @@ class GameScene extends Phaser.Scene {
     // half is laid out. None past the last level.
     _makeFieldMini() {
         const M = CONFIG.FIELD_MAP || {};
+        if (this.fieldMini) this._hideMapTitle(this.fieldMini, 0);
         if (this.fieldMini && this.fieldMini.box.scene) this.fieldMini.box.destroy();
         this.fieldMini = null;
         const lvl = this.cropLevel;

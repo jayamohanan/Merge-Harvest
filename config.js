@@ -129,7 +129,7 @@ var CONFIG = {
         BATCH:    4,        // icons per tick, so ~4.5 per second at the default
     },
 
-    BATTERY_START_LEVEL:1,
+    BATTERY_START_LEVEL:20,
     // THE ECONOMY — on the same 2.5× scale as the crop and piggy tables (see
     // THE ECONOMY'S RULES in cropData.js).
     ECONOMY: {
@@ -833,6 +833,9 @@ var CONFIG = {
         // itself (INTRO). See _celebrateSection / _introSection.
         SECTION: {
             ENABLED:  true,
+            // The section's name ("Fields 1–5") over its card, each time the
+            // card comes up after the section's intro (which shows it inside).
+            TITLE: { ENABLED: true, SIZE: 30, GAP: 6, COLOR: '#fff6e0', EDGE: '#3b2a17' },
             WAVE:     { STAGGER_MS: 130, MS: 240, SCALE: 1.25 },
             STAMP_SIZE:  40,          // px @ design (never past 7.5% of the card's width)
             STAMP_TILT:  -6,          // degrees
