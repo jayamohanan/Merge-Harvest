@@ -5579,6 +5579,8 @@ class GameScene extends Phaser.Scene {
 
         this.time.delayedCall(CONFIG.POINTER.TUTORIAL_START_DELAY, () => {
             if (!this.startOverlay || !pCont.active) return;
+            this._shadePage(CONFIG.POINTER.TUTORIAL_MASK_COLOR, CONFIG.POINTER.TUTORIAL_MASK_OPACITY,
+                CONFIG.POINTER.TUTORIAL_FADE_DURATION);
             this.tweens.add({
                 targets: this.startOverlay, alpha: 1,
                 duration: CONFIG.POINTER.TUTORIAL_FADE_DURATION, ease: 'Linear',
@@ -5599,8 +5601,31 @@ class GameScene extends Phaser.Scene {
         });
     }
 
+    // THE PAGE AROUND THE CANVAS, SHADED WITH AN OVERLAY. An overlay is drawn
+    // inside the canvas, but on a frame whose shape the stage does not match
+    // exactly, a strip of the page (html/body, the ground's #d5ba95) shows
+    // round it — invisible normally, a bright line once the game is darkened.
+    // So the page takes the colour the overlay makes over the ground, fading
+    // with it: `color` + `alpha` the overlay's, null to put the page back.
+    _shadePage(color, alpha, ms) {
+        if (typeof document === 'undefined') return;
+        const ground = '#d5ba95';
+        let css = '';
+        if (color) {
+            const g = hexColor(ground), c = hexColor(color), a = Math.max(0, Math.min(1, alpha));
+            const mix = (sh) => Math.round(((g >> sh) & 255) * (1 - a) + ((c >> sh) & 255) * a);
+            css = `rgb(${mix(16)}, ${mix(8)}, ${mix(0)})`;
+        }
+        for (const el of [document.documentElement, document.body]) {
+            if (!el) continue;
+            el.style.transition = ms > 0 ? `background-color ${ms}ms linear` : '';
+            el.style.backgroundColor = css || ground;
+        }
+    }
+
     removeStartOverlay() {
         if (!this.startOverlay) return;
+        this._shadePage(null);
         this.startOverlay.destroy();
         if (this.startPointer) this.startPointer.destroy();
         this.startOverlay = null;
@@ -6253,6 +6278,7 @@ class GameScene extends Phaser.Scene {
             parseInt(A.OVERLAY_COLOR.substring(1), 16), A.OVERLAY_ALPHA)
             .setDepth(10000)
             .setInteractive();  // Block clicks from passing through overlay
+        this._shadePage(A.OVERLAY_COLOR, A.OVERLAY_ALPHA, 0);
         
         // Create countdown timer text in center
         const timerText = this.add.text(W / 2, H / 2, `${A.DURATION}`, {
@@ -6290,6 +6316,7 @@ class GameScene extends Phaser.Scene {
             } else {
                 // Ad complete - destroy immediately and upgrade
                 window.clearInterval(countdown);
+                this._shadePage(null);
                 overlay.destroy();
                 rewardText.destroy();
                 timerText.destroy();
