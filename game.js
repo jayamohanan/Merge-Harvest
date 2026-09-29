@@ -498,23 +498,41 @@ class GameScene extends Phaser.Scene {
     // way round is not mistaken for the one it arrived at.
     _pollOrientation() {
         const S = CONFIG.STAGE || {};
-        if (S.FORCE === 'portrait' || S.FORCE === 'landscape') return;
         const w = window.innerWidth, h = window.innerHeight;
         if (!w || !h) return;
         const now = performance.now();
-        if ((h > w) === this.isPortrait) {
-            // Matches — including turned back before a relayout ran.
+        // WHAT THIS FRAME WOULD GET, and whether it differs enough from what
+        // the game has: a TURN (portrait <-> landscape), or a RESHAPE — the
+        // same orientation, but a stage height more than RESHAPE_TOLERANCE
+        // away (a tall phone after a squat tablet, the fullscreen button on a
+        // 16:10 screen, iPad split view). Small changes — a phone's toolbar
+        // sliding — stay under the tolerance and are left to FIT's scaling.
+        const want = pickStage();
+        const turn = want.portrait !== this.isPortrait;
+        const tol = S.RESHAPE_TOLERANCE !== undefined ? S.RESHAPE_TOLERANCE : 0.05;
+        const reshape = !turn && tol >= 0
+            && Math.abs(want.height - this.scale.height) / this.scale.height > tol;
+        if (!turn && !reshape) {
+            // Matches — including changed back before a relayout ran.
             this._turnSeenAt = 0;
+            this._seenW = this._seenH = 0;
             this._relayoutPending = false;
             return;
         }
-        if (!this._turnSeenAt) {
+        // THE SIZE HAS TO STAND STILL first: every new size restarts the wait,
+        // so a window being dragged relayouts once, when it is let go.
+        if (w !== this._seenW || h !== this._seenH) {
+            this._seenW = w; this._seenH = h;
             this._turnSeenAt = now;
-            orientLog(`turn seen: frame ${w} x ${h} is ${h > w ? 'PORTRAIT' : 'LANDSCAPE'}, ` +
-                `game is ${this.isPortrait ? 'PORTRAIT' : 'LANDSCAPE'} (${this.scale.width} x ${this.scale.height})`);
+            orientLog(`${turn ? 'turn' : 'reshape'} seen: frame ${w} x ${h} wants ` +
+                `${want.portrait ? 'PORTRAIT' : 'LANDSCAPE'} ${want.width} x ${want.height}, ` +
+                `game is ${this.isPortrait ? 'PORTRAIT' : 'LANDSCAPE'} ${this.scale.width} x ${this.scale.height}`);
+            return;
         }
-        if (!this._relayoutPending &&
-            now - this._turnSeenAt >= (S.RELAYOUT_DEBOUNCE_MS !== undefined ? S.RELAYOUT_DEBOUNCE_MS : 100)) {
+        const wait = turn
+            ? (S.RELAYOUT_DEBOUNCE_MS !== undefined ? S.RELAYOUT_DEBOUNCE_MS : 100)
+            : (S.RESHAPE_DEBOUNCE_MS  !== undefined ? S.RESHAPE_DEBOUNCE_MS  : 250);
+        if (!this._relayoutPending && now - this._turnSeenAt >= wait) {
             this._relayoutPending = true;
             orientLog('relayout pending — runs once the field is settled');
         }
@@ -6607,9 +6625,11 @@ function orientLog(msg) {
 // preserve and nothing to replay.
 //
 // Chosen from the window's SHAPE — at boot, and again when the screen turns
-// between portrait and landscape. A turn does not restart anything: the scene
-// takes the new size and re-lays itself out in place, run and all (see
-// _relayout). Any other resize is still just the browser scaling this stage.
+// between portrait and landscape OR changes shape enough within one
+// (STAGE.RESHAPE_TOLERANCE — see _pollOrientation). Neither restarts
+// anything: the scene takes the new size and re-lays itself out in place, run
+// and all (see _relayout). A smaller resize is just the browser scaling this
+// stage.
 function pickStage() {
     const S = (typeof CONFIG !== 'undefined' && CONFIG.STAGE) || {};
     const P = S.PORTRAIT  || { W: 1080, H: 1920 };

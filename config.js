@@ -211,6 +211,13 @@ var CONFIG = {
         // How long a new shape has to hold before the game re-lays out for it,
         // ms — a turn passes through in-between sizes on the way round.
         RELAYOUT_DEBOUNCE_MS: 100,
+        // A RESHAPE — same orientation, but a frame whose shape would give a
+        // stage height more than this share away from the current one —
+        // re-lays the game out too, once the size has held still for
+        // RESHAPE_DEBOUNCE_MS. Under it (a phone's toolbar sliding), FIT just
+        // scales. -1 turns reshapes off: only a turn re-lays out.
+        RESHAPE_TOLERANCE:   0.05,
+        RESHAPE_DEBOUNCE_MS: 250,
     },
 
     // ── Level art, loaded as levels come near ─────────────────────────────────
