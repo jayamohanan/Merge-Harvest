@@ -2602,16 +2602,17 @@ class GameScene extends Phaser.Scene {
         // px it was baked at and a particle's scale is a multiple of that.
         const sc = plantH * (L.SIZE_FRAC !== undefined ? L.SIZE_FRAC : 0.17) / px;
 
-        // THE SIZE IS BAKED INTO THE EMITTER, so one built for last level's
-        // crop would go on throwing last level's leaves. Rebuilt when it
-        // changes — which is on a level turn or a resize, not on a pick.
-        if (this.leafEmitter && (!this.leafEmitter.scene || this._leafScale !== sc)) {
-            this.leafEmitter.destroy();
-            this.leafEmitter = null;
-        }
+        // THE SIZE IS PICKED PER LEAF, AS IT IS THROWN (scale.onEmit), from
+        // the plant that threw it — never baked into the emitter. Plants differ
+        // in height (HEIGHT_JITTER, and the rows behind), so a baked size meant
+        // rebuilding the emitter whenever the next pick came off a different
+        // plant — and a rebuild destroys every leaf still in the air. With all
+        // three plots picked in the same tick, only the last one's survived.
+        this._leafScale = sc;
+        const minK = L.SCALE_MIN !== undefined ? L.SCALE_MIN : 0.7;
+        if (this.leafEmitter && !this.leafEmitter.scene) this.leafEmitter = null;
         if (!this.leafEmitter) {
             const D = (CONFIG.CROPS || {}).DEPTH || {};
-            this._leafScale = sc;
             this.leafEmitter = this.add.particles(0, 0, this._leafTexture(), {
                 lifespan: { min: L.LIFE_MIN !== undefined ? L.LIFE_MIN : 620,
                             max: L.LIFE_MAX !== undefined ? L.LIFE_MAX : 1050 },
@@ -2624,7 +2625,7 @@ class GameScene extends Phaser.Scene {
                 speed: { min: (L.SPEED_MIN !== undefined ? L.SPEED_MIN : 45)  * s,
                          max: (L.SPEED_MAX !== undefined ? L.SPEED_MAX : 130) * s },
                 gravityY: (L.GRAVITY !== undefined ? L.GRAVITY : 420) * s,
-                scale: { min: sc * (L.SCALE_MIN !== undefined ? L.SCALE_MIN : 0.7), max: sc },
+                scale: { onEmit: () => this._leafScale * (minK + (1 - minK) * Math.random()) },
                 // ONE TURN OVER ITS LIFE. They do not spin in step despite the
                 // same sweep, because no two leaves are given the same lifespan
                 // to take it in.
@@ -2693,7 +2694,6 @@ class GameScene extends Phaser.Scene {
         for (let k = from; k < to; k++) {
             const p = P[k];
             const at = instant ? 0 : (k - from) * chain;
-            if (!instant) this.time.delayedCall(at, () => this._leafBurst(p.cx, p.baseY - p.h / 2, p.h));
             if (this._stumpOn()) {
                 this._toStump(crop, p, at, !instant);
                 continue;
@@ -2785,7 +2785,7 @@ class GameScene extends Phaser.Scene {
             if (!this.crops || this.crops[crop.row] !== crop) return;
             // A PLANT DONE IS PAID FOR — a puff, a figure and a few coins —
             // but only when it is done NOW, never when a rebuild restores it.
-            if (reward) this._plantDoneReward(crop, p);
+            if (reward) { this._collapsePlant(p); this._plantDoneReward(crop, p); }
             const ST  = (CONFIG.CROPS || {}).STUMP || {};
             // CUT DOWN TO ITS OWN BASE (STUMP.KEEP): the plant stays, cropped
             // to its bottom KEEP — still on its foot, since it stands from its
@@ -2856,6 +2856,7 @@ class GameScene extends Phaser.Scene {
                 p.stump = pl;
                 p.stumpStroke = this._stumpStroke(p, pl, cut);
                 p.plant = null;
+                if (reward) this._popStump(p);
                 return;
             }
             for (const o of [p.plant, p.fruit, p.shadow]) {
@@ -2873,9 +2874,79 @@ class GameScene extends Phaser.Scene {
                 .setDisplaySize(src.width * p.pf, src.height * p.pf).setFlipX(!!p.flip)
                 .setDepth(this._plantDepth(p.k, 'PLANT'));
             p.stumpStroke = this._stumpStroke(p, p.stump, null);
+            if (reward) this._popStump(p);
         };
         if (delay > 0) this.time.delayedCall(delay, swap);
         else swap();
+    }
+
+    // ── A PLANT PICKED CLEAN: THE COLLAPSE ─────────────────────────────────
+    // CROPS.FINISH. The moment is made out of the change itself, not added
+    // particles — so it reads the same on any crop's shape. A COPY of the
+    // whole plant, over where it stood: a white flash, then it squashes down
+    // into its own foot and fades, while a ring of dust spreads from the foot
+    // along the ground. Called while the plant is still whole, before it is
+    // cut down; the real plant becomes the stump underneath untouched.
+    _collapsePlant(p) {
+        const F = (CONFIG.CROPS || {}).FINISH || {};
+        if (F.ENABLED === false || !p) return;
+        const src = p.plant;
+        if (src && src.scene && F.COLLAPSE !== false) {
+            const ms = F.COLLAPSE_MS !== undefined ? F.COLLAPSE_MS : 200;
+            const g = this.add.image(src.x, src.y, src.texture.key, src.frame.name)
+                .setOrigin(src.originX, src.originY)
+                .setDisplaySize(src.displayWidth, src.displayHeight)
+                .setFlipX(src.flipX).setAngle(src.angle)
+                .setDepth(this._plantDepth(p.k, 'FRUIT') + 0.01);
+            const sx = g.scaleX, sy = g.scaleY;
+            if (F.FLASH_MS > 0) {
+                g.setTintFill(hexColor(F.FLASH_COLOR || '#ffffff'));
+                this.time.delayedCall(F.FLASH_MS, () => { if (g.scene) g.clearTint(); });
+            }
+            this.tweens.add({ targets: g,
+                scaleX: sx * (F.SQUASH_X !== undefined ? F.SQUASH_X : 1.15),
+                scaleY: sy * (F.SQUASH_Y !== undefined ? F.SQUASH_Y : 0.08),
+                alpha: 0,
+                delay: F.FLASH_MS > 0 ? F.FLASH_MS : 0,
+                duration: ms, ease: F.COLLAPSE_EASE || 'Back.easeIn',
+                onComplete: () => g.destroy() });
+        }
+        // THE DUST RING, flat on the ground at the foot: an outline that
+        // spreads and fades. Over the plants behind, under this one's stump.
+        if (F.RING !== false) {
+            const s  = this.layoutConfig.scale;
+            const w0 = p.w * (F.RING_FROM !== undefined ? F.RING_FROM : 0.35);
+            const ring = this.add.ellipse(p.cx, p.baseY, w0, w0 / (F.RING_ASPECT !== undefined ? F.RING_ASPECT : 3))
+                .setFillStyle()
+                .setStrokeStyle(Math.max(1, (F.RING_W !== undefined ? F.RING_W : 4) * s),
+                    hexColor(F.RING_COLOR || '#e2cfaa'), 1)
+                .setAlpha(F.RING_ALPHA !== undefined ? F.RING_ALPHA : 0.85)
+                .setDepth(this._plantDepth(p.k, 'SHADOW') + 0.02);
+            const k = (F.RING_TO !== undefined ? F.RING_TO : 1.3) / (F.RING_FROM !== undefined ? F.RING_FROM : 0.35);
+            this.tweens.add({ targets: ring, scaleX: k, scaleY: k, alpha: 0,
+                delay: F.FLASH_MS > 0 ? F.FLASH_MS : 0,
+                duration: F.RING_MS !== undefined ? F.RING_MS : 420, ease: 'Cubic.easeOut',
+                onComplete: () => ring.destroy() });
+        }
+    }
+
+    // THE STUMP POPS UP as the plant goes down into it: from a little under
+    // its size, over, and settled — its stroke and both cut masks with it,
+    // each about its own foot, so the three stay one shape.
+    _popStump(p) {
+        const F = (CONFIG.CROPS || {}).FINISH || {};
+        if (F.ENABLED === false || F.POP === false || !p.stump || !p.stump.scene) return;
+        const from = F.POP_FROM !== undefined ? F.POP_FROM : 0.6;
+        const delay = (F.FLASH_MS > 0 ? F.FLASH_MS : 0)
+                    + (F.COLLAPSE_MS !== undefined ? F.COLLAPSE_MS : 200) * 0.5;
+        const ms = F.POP_MS !== undefined ? F.POP_MS : 220;
+        for (const o of [p.stump, p.stumpStroke, p.stump.stumpMask, p.stumpStroke && p.stumpStroke.stumpMask]) {
+            if (!o) continue;
+            const sx = o.scaleX, sy = o.scaleY;
+            o.setScale(sx * from, sy * from);
+            this.tweens.add({ targets: o, scaleX: sx, scaleY: sy, delay, duration: ms,
+                ease: 'Back.easeOut' });
+        }
     }
 
     // The slanted cut, as a geometry mask drawn about the stump's foot — so
@@ -6371,6 +6442,7 @@ class GameScene extends Phaser.Scene {
         const step = Math.max(1, R.STEP || 5);
         const amount = (R.BASE !== undefined ? R.BASE : 10) * (Math.floor((lvl - 1) / step) + 1);
         const x = p.cx, y = p.baseY - (p.h || 0) * 0.35;
+        const pay = R.PAY !== false;   // false: the puff only — no "+N", no coins
 
         // THE PUFF, one shared emitter fired at the stump's foot.
         if (R.PUFF !== false) {
@@ -6387,6 +6459,8 @@ class GameScene extends Phaser.Scene {
             }
             this.plantPuff.emitParticleAt(p.cx, p.baseY - 4 * s, R.PUFF_COUNT !== undefined ? R.PUFF_COUNT : 6);
         }
+
+        if (!pay) return;
 
         // "+N", in the coin counter's own gold, rising and fading.
         const CC = CONFIG.COIN_COUNTER || {};

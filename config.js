@@ -517,6 +517,9 @@ var CONFIG = {
     // one step every STEP levels. See _plantDoneReward.
     PLANT_REWARD: {
         ENABLED:    true,
+        // false: a finished plant pays nothing — no "+N", no coins, only the
+        // puff (and CROPS.FINISH). true: the coins below.
+        PAY:        false,
         BASE:       10,
         STEP:       5,
         COINS:      3,        // how many fly to the counter
@@ -1676,6 +1679,34 @@ var CONFIG = {
             // resolution — SIZE_FRAC is what decides how big one looks — so
             // raise it only if the leaves look soft on a large screen.
             TEXTURE_PX: 24,
+        },
+
+        // ── A PLANT PICKED CLEAN ────────────────────────────────────────────
+        // When a plant's last fruit goes and it turns to a stump: the plant
+        // flashes, squashes down into its foot and fades, the stump pops up in
+        // its place, and a ring of dust spreads along the ground from the foot.
+        // Nothing here depends on the crop's shape, so it reads the same on
+        // onion as on tomato. Not played on a restore/relayout.
+        FINISH: {
+            ENABLED:     true,
+            FLASH_MS:    0,         // white first, this long; 0 for none
+            FLASH_COLOR: '#ffffff',
+            COLLAPSE:    true,
+            COLLAPSE_MS: 400,
+            COLLAPSE_EASE: 'Back.easeIn',
+            SQUASH_X:    1.15,      // the plant's width and height at the end
+            SQUASH_Y:    0.08,      // of it, × its own
+            POP:         true,      // the stump from POP_FROM of its size, overshooting
+            POP_FROM:    0.6,
+            POP_MS:      220,
+            RING:        true,
+            RING_FROM:   0.35,      // its width, × the plant's, at the start…
+            RING_TO:     1.3,       // …and at the end
+            RING_ASPECT: 3,         // wide over tall — lying on the ground
+            RING_W:      4,         // line, px @ design
+            RING_COLOR:  '#e2cfaa', // the puff's dust
+            RING_ALPHA:  0.85,
+            RING_MS:     420,
         },
     },
 };
