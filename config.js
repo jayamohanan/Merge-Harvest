@@ -1579,7 +1579,12 @@ var CONFIG = {
                 // It shrinks on the way, to a fraction of the size it left at —
                 // partly distance, mostly so a full-sized tomato does not have
                 // to fit through the slot of a bank half its width.
-                SHRINK: 0.42,
+                // Down to this share of its size as it goes into the bank —
+                // small enough to read as taken in, not parked on top.
+                SHRINK: 0.5,
+                // And faded out over the last stretch of the flight, from this
+                // share of the way (1 = no fade). It flies OVER the bank.
+                FADE_FROM: 1,
                 // Stagger, so three banks fed on the same tick are not three
                 // identical flights in lockstep. Multiplied by the plot index.
                 STAGGER_MS: 45,

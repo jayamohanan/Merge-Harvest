@@ -2510,10 +2510,22 @@ class GameScene extends Phaser.Scene {
         // setDisplaySize, so its scale is already a fraction of the frame's
         // pixels — shrinking toward 1 would blow it up on the way to the bank.
         const k = F.SHRINK !== undefined ? F.SHRINK : 0.42;
+        // OVER THE BANK, not behind it: the flight ends on the bank, and a
+        // fruit that slips under it vanishes a beat early behind its body.
+        fr.setDepth(pig.depth + 0.01);
+        // SHRINKING AWAY AS IT GOES IN — scaled right down, and faded over the
+        // last stretch (FLY.FADE_FROM of the way) — so it is taken into the
+        // bank rather than stopping on top of it and blinking out.
+        const fadeFrom = F.FADE_FROM !== undefined ? F.FADE_FROM : 0.6;
+        const a0 = fr.alpha;
         this.tweens.add({
             targets: fr,
             x: pig.x, y: pig.y,
             scaleX: fr.scaleX * k, scaleY: fr.scaleY * k,
+            onUpdate: (tw) => {
+                const p = tw.progress;
+                if (fadeFrom < 1 && p > fadeFrom) fr.setAlpha(a0 * (1 - (p - fadeFrom) / (1 - fadeFrom)));
+            },
             duration: F.MS !== undefined ? F.MS : 420,
             // Three banks fed on the same tick should not fly in lockstep.
             delay: (F.STAGGER_MS !== undefined ? F.STAGGER_MS : 45) * row,
