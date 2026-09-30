@@ -106,11 +106,12 @@ var CONFIG = {
         BATCH:    4,        // icons per tick, so ~4.5 per second at the default
     },
 
-    BATTERY_START_LEVEL: 1,
+    BATTERY_START_LEVEL: 60,
+    // Coins a new run starts with. Default 2500; raise it to debug later levels.
+    START_COINS: 25000000000,
     // THE ECONOMY — on the same 2.5× scale as the crop and piggy tables (see
     // THE ECONOMY'S RULES in cropData.js).
     ECONOMY: {
-        START_COINS:          2500,
         SPAWN_COST_PER_LEVEL: 25,    // a spawn costs this × the spawn level
     },
     BATTERY_IMAGE_EXTENSIONS: ['webp'],

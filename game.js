@@ -134,7 +134,7 @@ class GameScene extends Phaser.Scene {
     init() {
         this.platforms          = [];   // 3 battery slots (share this name so the
                                         // drag/drop code keeps working unchanged)
-        this.coins              = CONFIG.ECONOMY.START_COINS;
+        this.coins              = CONFIG.START_COINS;
         this.grid               = Array(3).fill(null).map(() => Array(3).fill(null));
         this.gridCells          = [];
         this.batteries          = [];
