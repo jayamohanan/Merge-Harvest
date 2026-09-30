@@ -1272,6 +1272,11 @@ var CONFIG = {
             // of every level, whatever COUNTS says — to see how a long row
             // looks. null for the real game. At most DEPTH.ROW_MAX.
             DEBUG_COUNT: null,
+            // TEST ONLY: every level, one live plant per plot, standing at the
+            // LAST place of a full ROW_MAX row and holding the plot's whole
+            // figure; the places in front of it are stumps. For checking the
+            // harvest from the highest, furthest-back spot. false for the game.
+            DEBUG_BACK_ONLY: true,
             // PREVIEW ONLY: a panel over the farm half showing every plot's
             // row as COUNT stumps of CROP, where a real level would stand
             // them, with a line through each row's feet — for lining the three

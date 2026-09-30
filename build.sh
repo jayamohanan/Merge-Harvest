@@ -61,6 +61,7 @@ cat >> "$OUT/config.js" <<'EOF'
     const F = CONFIG.FIELD_MAP || {};
     for (const P of [M.STUMP_PREVIEW, M.CROP_PREVIEW, F.PREVIEW]) if (P) P.ENABLED = false;
     M.DEBUG_COUNT = null;
+    M.DEBUG_BACK_ONLY = false;
 })();
 EOF
 

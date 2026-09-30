@@ -623,7 +623,7 @@ class GameScene extends Phaser.Scene {
         for (const lbl of this.piggyLabels || []) gone(lbl);
         for (const c of this.crops || []) {
             gone(c.plant); gone(c.fruit); gone(c.label); gone(c.shadow); gone(c.dots);
-            for (const p of c.plants || []) { gone(p.plant); gone(p.shadow); gone(p.fruit); gone(p.stump); gone(p.stumpStroke); }
+            for (const p of [...(c.plants || []), ...(c.debugStumps || [])]) { gone(p.plant); gone(p.shadow); gone(p.fruit); gone(p.stump); gone(p.stumpStroke); }
         }
         this.crops = null;
         for (const p of this.platforms) p.crop = null;
@@ -2237,20 +2237,36 @@ class GameScene extends Phaser.Scene {
             // SPACED AND SIZED BY THE LONGEST ROW (nMax), so a shorter,
             // poorer plot's plants match the richest one's — it simply has
             // fewer of them. Where each stands: _rowPlacement.
-            const nMax = this._plantsPerPlot(lvl);
-            const n    = this._plantsInPlot(lvl, i);
-            const place = this._rowPlacement(i, cx, baseY, w, h, nMax, n, flip, lvl);
+            let nMax = this._plantsPerPlot(lvl);
+            let n    = this._plantsInPlot(lvl, i);
+            let place = this._rowPlacement(i, cx, baseY, w, h, nMax, n, flip, lvl);
+            // TEST: BACK PLANT ONLY (MULTI.DEBUG_BACK_ONLY) — the plot's one
+            // live plant stands at the LAST place of a full ROW_MAX row and
+            // holds the plot's whole figure; places 1..ROW_MAX-1 are stumps
+            // (drawn after the plots, below). For checking the harvest from the
+            // highest, furthest-back spot a plant can stand in.
+            const backOnly = !!MP.DEBUG_BACK_ONLY;
+            let backK = 0, stumpSpots = null;
+            if (backOnly) {
+                const rowMax = Math.max(2, ((C.DEPTH || {}).ROW_MAX) || 10);
+                const full = this._rowPlacement(i, cx, baseY, w, h, rowMax, rowMax, flip, lvl);
+                backK = rowMax - 1;
+                stumpSpots = full.slice(0, backK);
+                place = [full[backK]];
+                n = nMax = 1;
+            }
             const shares = this._splitPlot(yields[i], n);
             const plants = [];
             let end = 0;
             for (let k = 0; k < n; k++) {
                 const { pflip, pw, ph, px, pby } = place[k];
+                const dk = backOnly ? backK : k;   // its depth band: where it stands
                 // Behind the one in front: each a hair lower in the stack.
                 const plant = this.add.image(px, pby, `crop_${name}`, 0)
                     .setDisplaySize(pw, ph).setOrigin(0.5, 1)
-                    .setDepth(this._plantDepth(k, 'PLANT')).setFlipX(pflip)
+                    .setDepth(this._plantDepth(dk, 'PLANT')).setFlipX(pflip)
                     .setAlpha(k === 0 ? 1 : (MP.WAITING_ALPHA !== undefined ? MP.WAITING_ALPHA : 0.45));
-                const shadow = this._plantShadow(name, px, pby, pw, this._plantDepth(k, 'SHADOW'));
+                const shadow = this._plantShadow(name, px, pby, pw, this._plantDepth(dk, 'SHADOW'));
                 end += shares[k];
                 // `end` — the plot's figure picked by the time this one is
                 // done, which is what moves the row on (see _advancePlants).
@@ -2372,8 +2388,29 @@ class GameScene extends Phaser.Scene {
             // the player reads; this is what the code reads, so the harvest
             // asks the slot for its plant rather than matching two positions up.
             if (this.platforms[i]) this.platforms[i].crop = crop;
+            crop.stumpSpots = stumpSpots;
             return crop;
         });
+
+        // TEST: BACK PLANT ONLY — the stumps in front of it, one per place,
+        // cut down with the game's own stump code (_toStump), no reward.
+        if ((C.MULTI || {}).DEBUG_BACK_ONLY) {
+            const f0s =this.textures.get(`crop_${name}`).get(0);
+            for (const crop of this.crops) {
+                crop.debugStumps = (crop.stumpSpots || []).map((q, k) => {
+                    const p = {
+                        plant: this.add.image(q.px, q.pby, `crop_${name}`, 0)
+                            .setDisplaySize(q.pw, q.ph).setOrigin(0.5, 1)
+                            .setDepth(this._plantDepth(k, 'PLANT')).setFlipX(q.pflip),
+                        shadow: this._plantShadow(name, q.px, q.pby, q.pw, this._plantDepth(k, 'SHADOW')),
+                        w: q.pw, h: q.ph, cx: q.px, baseY: q.pby,
+                        pf: q.pw / f0s.width, k, name, flip: q.pflip,
+                    };
+                    this._toStump(crop, p, 0, false);
+                    return p;
+                });
+            }
+        }
 
         // Each bank's payout for this level, over it — shown again here since
         // a bank that burst last level took its label down with it.
@@ -5046,7 +5083,8 @@ class GameScene extends Phaser.Scene {
         let any = false;
         for (const cr of list) {
             if (cr.regrow) { cr.regrow.remove(false); cr.regrow = null; }
-            const row = (cr.plants || []).flatMap((p) => [p.plant, p.shadow, p.fruit, p.stump, p.stumpStroke]);
+            const row = [...(cr.plants || []), ...(cr.debugStumps || [])]
+                .flatMap((p) => [p.plant, p.shadow, p.fruit, p.stump, p.stumpStroke]);
             for (const o of new Set([cr.plant, cr.fruit, cr.label, cr.shadow, cr.dots, ...row])) {
                 if (!o || !o.scene) continue;
                 any = true;
