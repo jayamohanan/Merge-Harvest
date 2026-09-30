@@ -1327,7 +1327,9 @@ var CONFIG = {
             // its own width, so the middle row (which recedes straight up)
             // peeks out past the one in front. 0 for straight lines.
             ZIGZAG:     0.15,
-            SCALE_STEP: 0.05,   // per plant behind: how far toward the point, and how much smaller
+            SCALE_STEP: 0.035,  // per plant behind: how far toward the point, and how much smaller
+                                // (0.05 took the 10th plant 45% of the way up and
+                                // too close to its piggy bank)
             // Every other plant in a row mirrored, fruit and stump with it — a
             // row of one picture reads as copies until they face different ways.
             ALTERNATE_FLIP: true,
