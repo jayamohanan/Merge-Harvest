@@ -1708,6 +1708,7 @@ class GameScene extends Phaser.Scene {
             const img = this.textures.get(srcKey).getSourceImage();
             if (!img || !img.width || !img.height) continue;
             this.textures.addSpriteSheet(key, img, { frameWidth: fw, frameHeight: img.height });
+            this._addProduceFrame(key, name, img, fw);
 
             // WHAT ACTUALLY CAME OUT. A sheet whose width is not a whole number
             // of frames loses the remainder, and one narrower than two frames
@@ -2310,8 +2311,7 @@ class GameScene extends Phaser.Scene {
             // _advancePlants) — so it is there to pick at once, nothing pops on.
             for (let k = 1; k < plants.length; k++) {
                 const p = plants[k];
-                p.fruit = this.add.image(p.cx, p.baseY, `crop_${name}`, 1)
-                    .setOrigin(0.5, 1).setDisplaySize(p.w, p.h).setFlipX(p.flip)
+                p.fruit = this._pinProduce(this._produceImage(name, p.cx, p.baseY, p.w, p.h, p.flip))
                     .setDepth(this._plantDepth(k, 'FRUIT'))
                     .setAlpha(p.plant.alpha);
             }
@@ -2325,9 +2325,9 @@ class GameScene extends Phaser.Scene {
             // swells from (see _newFruit). The harvest waits for the grow.
             if (grown) {
                 const fr = this._newFruit(crop, false);
-                if (fr) fr.setOrigin(0.5, 1).setPosition(crop.cx, crop.baseY);
+                if (fr) this._pinProduce(fr);
                 this._growPlant(crop, () => {
-                    if (fr && fr.scene) fr.setOrigin(0.5, 0.5).setPosition(crop.cx, crop.cy);
+                    if (fr && fr.scene) this._unpinProduce(fr);
                     crop.ready = true;
                 }, fr);
             } else {
@@ -2562,7 +2562,7 @@ class GameScene extends Phaser.Scene {
         chain.forEach(({ p, fr }, i) => {
             this.tweens.killTweensOf(fr);
             // Off the foot pin it stood on, onto its own centre, like any fruit.
-            fr.setOrigin(0.5, 0.5).setPosition(p.cx, p.baseY - p.h / 2).setAlpha(1)
+            this._unpinProduce(fr).setAlpha(1)
               .setDepth(D.PICKED !== undefined ? D.PICKED : 6);
             this._liftFruit(fr, crop, p.h, last && i === chain.length - 1, (i + 1) * gap);
         });
@@ -2627,13 +2627,107 @@ class GameScene extends Phaser.Scene {
         return true;
     }
 
-    // THE LIFT: a fruit off its plant, straight up by RISE × `h`, then on to
-    // the bank (_bankFruit). `delay` holds it for its place in a chain.
+    // ── THE PRODUCE ON ITS OWN ───────────────────────────────────────────────
+    // A crop's fruit frame is the plant's full size, mostly empty: the produce
+    // hangs somewhere inside it — low for a potato, high for a sunflower. So
+    // when a sheet is cut, the produce's own box in the fruit frame is found
+    // from its pixels (a pixel of margin kept) and added as the frame
+    // 'produce'; fruit is drawn from that, placed where it hangs in the full
+    // frame. What moves, shrinks and lands is then the produce itself — its
+    // centre is the sprite's — rather than an empty frame with the produce
+    // somewhere off its middle. Measured, not written down: it follows the art.
+    _addProduceFrame(key, name, img, fw) {
+        this._produceRects = this._produceRects || {};
+        const H = img.height;
+        try {
+            const cv = document.createElement('canvas');
+            cv.width = fw; cv.height = H;
+            const cx = cv.getContext('2d', { willReadFrequently: true });
+            cx.drawImage(img, fw, 0, fw, H, 0, 0, fw, H);   // frame 1, the fruit
+            const a = cx.getImageData(0, 0, fw, H).data;
+            let x0 = fw, y0 = H, x1 = -1, y1 = -1;
+            for (let y = 0; y < H; y++) {
+                for (let x = 0; x < fw; x++) {
+                    if (a[(y * fw + x) * 4 + 3] > 8) {
+                        if (x < x0) x0 = x; if (x > x1) x1 = x;
+                        if (y < y0) y0 = y; if (y > y1) y1 = y;
+                    }
+                }
+            }
+            if (x1 < 0) return;                         // an empty fruit frame
+            x0 = Math.max(0, x0 - 1); y0 = Math.max(0, y0 - 1);
+            x1 = Math.min(fw - 1, x1 + 1); y1 = Math.min(H - 1, y1 + 1);
+            const r = { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1, frameW: fw, frameH: H };
+            this.textures.get(key).add('produce', 0, fw + r.x, r.y, r.w, r.h);
+            this._produceRects[name] = r;
+        } catch (e) {
+            // Unreadable pixels: this crop's fruit stays the full frame.
+        }
+    }
+
+    // A crop's produce, for a plant standing with its foot at (fx, fy) and
+    // drawn pw × ph, mirrored or not: where it hangs, at the plant's scale,
+    // centred on itself. It also remembers its foot, so it can be PINNED
+    // there — scaled about the plant's foot while the plant grows in — and
+    // put back on its own centre after (_pinProduce / _unpinProduce).
+    _produceImage(name, fx, fy, pw, ph, flip) {
+        const key = `crop_${name}`;
+        const r = this._produceRects && this._produceRects[name];
+        let img, cx, cy, dw, dh;
+        if (r) {
+            const kx = pw / r.frameW, ky = ph / r.frameH;
+            dw = r.w * kx; dh = r.h * ky;
+            let ox = (r.x + r.w / 2 - r.frameW / 2) * kx;
+            if (flip) ox = -ox;                         // it hangs on the other side
+            cx = fx + ox;
+            cy = fy - ph + (r.y + r.h / 2) * ky;
+            img = this.add.image(cx, cy, key, 'produce');
+        } else {
+            dw = pw; dh = ph; cx = fx; cy = fy - ph / 2;
+            img = this.add.image(cx, cy, key, 1);
+        }
+        img.setDisplaySize(dw, dh).setFlipX(!!flip);
+        img._centre = { x: cx, y: cy };
+        img._foot = { x: fx, y: fy };
+        img._pin = { x: 0.5 - (cx - fx) / dw, y: 0.5 - (cy - fy) / dh };
+        return img;
+    }
+    _pinProduce(fr) {
+        if (!fr || !fr._pin) return fr;
+        return fr.setOrigin(fr._pin.x, fr._pin.y).setPosition(fr._foot.x, fr._foot.y);
+    }
+    _unpinProduce(fr) {
+        if (!fr || !fr._centre) return fr;
+        return fr.setOrigin(0.5, 0.5).setPosition(fr._centre.x, fr._centre.y);
+    }
+
+    // THE LIFT: a fruit off its plant, straight up, then on to the bank
+    // (_bankFruit). `h` is its plant's height; `delay` holds it for its place
+    // in a chain.
+    //
+    // IT STOPS HALF WAY UP FROM THE PLANT'S TOP TO THE BANK'S CENTRE —
+    // LIFT_FRAC of that vertical gap above the top of the plant it came off.
+    // Measured from the PLANT, not from where the produce hangs, so every
+    // fruit off one plant stops at the same height, low-hanging or high. It
+    // can never reach the bank, on any screen or from any place in a row, and
+    // the flight always has the rest of the way to go. At least LIFT_MIN of a
+    // plant height, so the pluck always shows — even for produce hanging
+    // above that stop point already.
     _liftFruit(fr, crop, h, last, delay) {
         const H = (CONFIG.CROPS || {}).PICK || {};
+        const pig  = this.piggyBanks && this.piggyBanks[crop.row];
+        const least = h * (H.LIFT_MIN !== undefined ? H.LIFT_MIN : 0.12);
+        let lift = h;                                   // no bank: one plant height
+        if (pig && pig.scene) {
+            // The plant's top: its foot (kept on the fruit) less its height.
+            const foot = fr._foot ? fr._foot.y : fr.y + h / 2;
+            const plantTop = foot - h;
+            const stopY = plantTop + (pig.y - plantTop) * (H.LIFT_FRAC !== undefined ? H.LIFT_FRAC : 0.5);
+            lift = Math.max(least, fr.y - stopY);
+        }
         this.tweens.add({
             targets: fr,
-            y: fr.y - h * (H.RISE !== undefined ? H.RISE : 1),
+            y: fr.y - lift,
             delay: delay || 0,
             duration: H.MS !== undefined ? H.MS : 420,
             ease: H.EASE || 'Sine.easeOut',
@@ -2734,23 +2828,19 @@ class GameScene extends Phaser.Scene {
     // without it the fruit is simply there, which is what the plant is built
     // with — nothing grew, it already had one.
     //
-    // CENTRED ON THE PLANT, not pinned by its foot like the plant is. Both cover
-    // exactly the same rectangle either way, but the origin is what a scale
-    // happens ABOUT: pinned by the foot, a fruit growing from a fraction of its
-    // size would start down at the plant's ankles and climb into the canopy.
-    // About the centre it swells where fruit actually hangs, which is what lets
-    // POP_FROM go as low as it likes.
+    // THE PRODUCE ALONE, CENTRED ON ITSELF (see _produceImage), where it hangs
+    // on the plant. The origin is what a scale happens ABOUT, so it swells
+    // exactly where the fruit is, which is what lets POP_FROM go as low as it
+    // likes.
     _newFruit(crop, grown, onDone) {
         const C = CONFIG.CROPS || {}, H = C.PICK || {};
         if (crop.done || !crop.plant || !crop.plant.scene) return null;
         // OVER THE PLANT, for every crop — the produce is what the player picks.
         const rest = this._plantDepth(crop.active || 0, 'FRUIT');
-        // TURNED THE SAME WAY THE PLANT IS. Both frames are drawn over exactly
-        // the same rectangle, so the flip that mirrors the plant has to mirror
-        // its fruit too — otherwise a mirrored plant grows its produce on the
-        // side it no longer has.
-        const fr = this.add.image(crop.cx, crop.cy, `crop_${crop.name}`, 1)
-            .setDisplaySize(crop.w, crop.h).setDepth(rest).setFlipX(!!crop.flip);
+        // TURNED THE SAME WAY THE PLANT IS: a mirrored plant hangs its produce
+        // on the other side, so the produce is mirrored and placed to match.
+        const fr = this._produceImage(crop.name, crop.cx, crop.baseY, crop.w, crop.h, crop.flip)
+            .setDepth(rest);
         crop.fruit = fr;
         if (!grown) { if (onDone) onDone(); return fr; }
 
@@ -3008,7 +3098,7 @@ class GameScene extends Phaser.Scene {
                 q.fruit.destroy();
             } else {
                 if (crop.regrow) { crop.regrow.remove(false); crop.regrow = null; }
-                crop.fruit = q.fruit.setOrigin(0.5, 0.5).setPosition(crop.cx, crop.cy).setAlpha(1);
+                crop.fruit = this._unpinProduce(q.fruit).setAlpha(1);
             }
         } else if (!last && !crop.regrow) {
             this._newFruit(crop, !instant);

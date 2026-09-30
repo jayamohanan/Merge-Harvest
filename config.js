@@ -1470,11 +1470,12 @@ var CONFIG = {
         // harvest.
         PICK: {
             ENABLED: true,
-            RISE:   1,       // how far it climbs, in PLANT HEIGHTS. 1 lifts the
-                             // frame clear of the plant's crown, which is what
-                             // "off the plant" has to look like — the fruit is
-                             // drawn partway down a full-height frame, so a
-                             // shorter rise leaves it still among the leaves
+            // THE LIFT STOPS at LIFT_FRAC of the vertical way from the TOP OF
+            // THE PLANT to its bank's centre (0.5: half way) — the same height
+            // for every fruit off one plant, and never at the bank. At least
+            // LIFT_MIN of a plant height, so the pluck always shows.
+            LIFT_FRAC: 0.5,
+            LIFT_MIN:  0.12,
             MS:   220,       // halved from 420, to try a faster harvest
             EASE: 'Sine.easeOut',
 
