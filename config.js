@@ -234,7 +234,7 @@ var CONFIG = {
     //   Add ?newgame to the page's address to wipe the save and start over.
     SAVE: {
         ENABLED:  true,
-        LOAD:     true,
+        LOAD:     false,
         KEY:      'mergeHarvest.save',
         EVERY_MS: 2000,
     },
@@ -774,6 +774,10 @@ var CONFIG = {
             'cabbage':       '#ACD643',
             'lettuce':       '#CEE53D',
             'carrot':        '#FC7B12',
+            'tulip':         '#FD517A',
+            'lavender':      '#A563F4',
+            'poppy':         '#FA1E0A',
+            'rose':          '#D51412',
         },
         DEFAULT_CROP_COLOR: null,      // a crop not listed: leaves only
         // THE CROP ICONS shown in a field as it unlocks: <ICON_DIR><crop>-icon.webp,
@@ -1022,9 +1026,9 @@ var CONFIG = {
         // eventually disagree — silently, by slicing every frame askew.
         FRAME_W: 128,
         // ── THE ROTATION ────────────────────────────────────────────────────
-        // Position is the level, and the list WRAPS: with sixteen entries,
-        // level 17 is entry 1 again. So the run shows a new crop every level
-        // for sixteen levels before it comes back round to tomato — by which
+        // Position is the level, and the list WRAPS: with twenty-one entries,
+        // level 22 is entry 1 again. So the run shows a new crop every level
+        // for twenty-one levels before it comes back round to tomato — by which
         // point the figures on them are four orders of magnitude bigger.
         //
         // The crop cycling is not the progression — CROP_VALUES (cropData.js)
@@ -1036,10 +1040,12 @@ var CONFIG = {
         // Each name is a file in DIR: frames side by side, FRAME_W wide, and as
         // tall as the file — which genuinely varies here (tomato is 175 tall,
         // corn 238), so nothing declares the height and _sliceCrops reads it.
-        LEVELS: ['tomato',     'corn',        'egg-plant', 'melon',
+        LEVELS: ['tomato', 'sunflower',    'corn',        'egg-plant', 'melon',
                  'potato',     'bell-pepper', 'onion',     'pumpkin',
                  'strawberry', 'sunflower',   'banana',    'chilly-pepper',
-                 'pineapple',  'broccoli',    'cabbage',   'lettuce'],
+                 'pineapple',  'broccoli',    'cabbage',   'lettuce',
+                 'carrot',     'tulip',       'lavender',  'poppy',
+                 'rose'],
 
         // ── WHICH PLOTS ARE MIRRORED ────────────────────────────────────────
         // By plot, left to right: 0, 1, 2. A plot listed here draws its plant
