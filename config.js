@@ -1105,7 +1105,7 @@ var CONFIG = {
             // stay under ROW_STEP so no layer reaches the next plant's band.
             ROW_BASE:   3.5,
             ROW_STEP:   0.1,
-            ROW_MAX:    10,     // the longest row the bands are laid out for
+            ROW_MAX:    5,      // the longest row the bands are laid out for (was 10)
             BAND: {
                 SHADOW:     0,
                 PLANT:      0.05,
@@ -1262,7 +1262,9 @@ var CONFIG = {
             ENABLED: true,
             // [from level, plants in the RICHEST plot] — the other plots get
             // plants in proportion to their value (see PROPORTIONAL).
-            COUNTS: [[1, 1], [2, 3], [4, 5], [7, 8], [10, 10]],
+            // At most 5 (DEPTH.ROW_MAX) — was 1 → 3 → 5 → 8 → 10; capped at 5 so
+            // a row's back plants stay well clear of the piggy banks.
+            COUNTS: [[1, 1], [2, 3], [4, 5]],
             // Each plant worth about the same across the field: the richest
             // plot gets the level's full count, the others round(count × their
             // value ÷ the richest's), at least 1. false: every plot gets the
@@ -1302,7 +1304,7 @@ var CONFIG = {
             CROP_PREVIEW: {
                 ENABLED:     false,
                 CROP:        'tomato',
-                COUNTS:      [10, 10, 10],   // plot 1, 2, 3 — at most DEPTH.ROW_MAX
+                COUNTS:      [5, 5, 5],      // plot 1, 2, 3 — at most DEPTH.ROW_MAX
                 // THE PLANTS' ROOM — the band between the farm info and the
                 // slots — shaded light under them, with an outline round what
                 // the rows actually take and the share of it. false: plants only.
