@@ -706,6 +706,87 @@ class GameScene extends Phaser.Scene {
     // A plant rebuilt on the new layout, given back what the old one had: how
     // much is left on it, or — spent — bare, greyed and settled, with its bank
     // already burst. Straight to the end state, no animation: it happened.
+    // ── SAVING ───────────────────────────────────────────────────────────────
+    // CONFIG.SAVE. So a refresh by mistake does not cost a player their farm:
+    // the run is written to localStorage every EVERY_MS and whenever the page
+    // is hidden or closed (a reload is a close), and read back at boot.
+    //
+    // ONLY SETTLED FIGURES — levels, coins, how much each plot has left — never
+    // anything mid-animation. Coins still flying to the counter are not in the
+    // figure yet; losing a handful of those to a refresh is the trade.
+    _collectSave() {
+        const lvlOf = (row) => row.map((b) => (b ? b.level : 0));
+        // A LEVEL TURN IN PROGRESS SAVES AS THE NEXT LEVEL, fresh: the field is
+        // cleared or being resown, and a restore halfway through a turn has
+        // nothing to resume it with.
+        const turning = this._levelTurning && this._turnTo !== undefined;
+        const plots = turning || !this.crops ? null
+            : this.crops.map((c) => ({ left: c.left, done: !!c.done }));
+        return {
+            v: SAVE_VERSION,
+            t: Date.now(),
+            coins: this.coins,
+            cropLevel: turning ? this._turnTo : this.cropLevel,
+            plots,
+            grid: this.grid.map(lvlOf),
+            slots: this.chargingSlots.map((sl) => (sl ? sl.level : 0)),
+            highest: this.highestBatteryLevel,
+            spawnLevel: this.spawnButtonLevel,
+            spawnCost: this.spawnCost,
+            started: !!this.hasStartedPlaying,
+            mergeTut: !!this.mergeTutorialShown,
+            slotSeen: this.slotHintSeen.slice(),
+        };
+    }
+
+    _writeSave() {
+        const S = CONFIG.SAVE || {};
+        if (S.ENABLED === false || !this._saveReady) return;
+        try { localStorage.setItem(saveKey(), JSON.stringify(this._collectSave())); }
+        catch (e) { /* incognito / storage full / blocked — play on unsaved */ }
+    }
+
+    // Every EVERY_MS on the scene's clock (so not during an ad's freeze), and
+    // on the page being hidden or closed — the one that catches a reload.
+    _startAutosave() {
+        const S = CONFIG.SAVE || {};
+        if (S.ENABLED === false) return;
+        this._saveReady = true;
+        this.time.addEvent({ delay: S.EVERY_MS !== undefined ? S.EVERY_MS : 2000,
+            loop: true, callback: () => this._writeSave() });
+        if (!this._saveHooked && typeof window !== 'undefined') {
+            this._saveHooked = true;
+            const now = () => this._writeSave();
+            window.addEventListener('pagehide', now);
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') now();
+            });
+        }
+    }
+
+    // THE FIGURES FROM A SAVE, before anything is built from them.
+    _applySave(sv) {
+        this.coins = sv.coins;
+        this.cropLevel = sv.cropLevel;
+        this.highestBatteryLevel = sv.highest;
+        this.spawnButtonLevel = sv.spawnLevel;
+        this.spawnCost = sv.spawnCost;
+        this.mergeTutorialShown = sv.mergeTut;
+        this.slotHintSeen = sv.slotSeen;
+        this.slotHintDone = this.slotHintSeen.every(Boolean);
+    }
+
+    // THE PIGS FROM A SAVE, back in their cells and slots.
+    _restorePigs(sv) {
+        for (let r = 0; r < this.GRID_ROWS; r++) {
+            for (let c = 0; c < this.GRID_COLS; c++) {
+                const lv = sv.grid[r] && sv.grid[r][c];
+                if (lv > 0) this.spawnBatteryInGrid(r, c, lv);
+            }
+        }
+        sv.slots.forEach((lv, i) => { if (lv > 0) this.addBatteryToSlot(i, lv); });
+    }
+
     _restoreCrop(crop, k) {
         if (!k) return;
         crop.left = k.left;
@@ -767,6 +848,16 @@ class GameScene extends Phaser.Scene {
     // ================================================================
     preload() {
         loadMark('Phaser booted — preload starting');
+        // A RETURNING PLAYER'S CROP. The opening list (assets.js) holds only
+        // START_LEVEL's sheet; a saved run on another level needs its own in
+        // the opening load too, or the field would build empty.
+        this._save = readSave();
+        if (this._save) {
+            const nm = cropForLevel(this._save.cropLevel);
+            if (nm && nm !== cropForLevel((CONFIG.CROPS || {}).START_LEVEL || 1)) {
+                this.load.image(cropSrcKey(nm), cropFileOf(nm));
+            }
+        }
         // REAL FIGURES FROM HERE. The page's creep stops where it is and this
         // loader's progress carries on from there.
         if (typeof window !== 'undefined' && window.__loading) {
@@ -861,8 +952,19 @@ class GameScene extends Phaser.Scene {
         // The farm half: the plants on show, and the slots standing beside them.
         // The sheets are cut BEFORE anything asks for a frame of one.
         this._sliceCrops();
+        const save = this._save;
+        if (save) this._applySave(save);
         this.createSlots();
         this.buildCrops();
+        if (save) {
+            // No more left on a plot than it holds — a save from before a
+            // yield-table change could say otherwise.
+            (this.crops || []).forEach((c, i) => {
+                const k = save.plots && save.plots[i];
+                if (k) this._restoreCrop(c, Object.assign({}, k, { left: Math.min(k.left, c.total) }));
+            });
+            this._setFarmHarvested();
+        }
         this._deferFieldMini();
         this._showStumpPreview();
         this._showCropPreview();
@@ -871,13 +973,24 @@ class GameScene extends Phaser.Scene {
         // The merge half
         this.createGrid();
         this.createCoinDisplay();
-        this.spawnBatteryInGrid(0, 0, CONFIG.BATTERY_START_LEVEL);
-        this.assets.prefetchAhead(CONFIG.BATTERY_START_LEVEL + 1);
+        if (save) this._restorePigs(save);
+        else this.spawnBatteryInGrid(0, 0, CONFIG.BATTERY_START_LEVEL);
+        this.assets.prefetchAhead(this.highestBatteryLevel + 1);
         this.createButtons();
+        if (save) this.updateSpawnButton();
         this.time.addEvent({
             delay: 1000, callback: this.checkLevelUpTimer, callbackScope: this, loop: true,
         });
-        this.createStartOverlay();
+        // A RETURNING PLAYER skips the start tutorial — what removeStartOverlay
+        // would have set, set directly.
+        if (save && save.started) {
+            this.hasStartedPlaying = true;
+            this.levelUpTimer = this.time.now;
+            this.firstLevelUpTimer = true;
+        } else {
+            this.createStartOverlay();
+        }
+        this._startAutosave();
 
         // Input
         this.input.on('dragstart', this.onDragStart, this);
@@ -3470,6 +3583,7 @@ class GameScene extends Phaser.Scene {
     _advanceCropLevel() {
         if (this._levelTurning) return;
         this._levelTurning = true;
+        this._turnTo = this.cropLevel + 1;   // what a save made mid-turn resumes at
         const N = (CONFIG.CROPS || {}).NEXT_LEVEL || {};
         // A beat to see the field standing finished before it is cleared.
         this.time.delayedCall(N.DELAY_MS !== undefined ? N.DELAY_MS : 700, () => {
@@ -6968,6 +7082,60 @@ function pokiRewardedBreak() {
         return Promise.resolve(window.PokiSDK.rewardedBreak(() => {}))
             .then((ok) => !!ok).catch(() => false);
     } catch (e) { console.warn('[poki] rewardedBreak failed', e); return Promise.resolve(false); }
+}
+
+// ── The save, as stored ─────────────────────────────────────────────────────
+// Bump SAVE_VERSION if the shape below changes incompatibly: an older save is
+// then ignored (a fresh start) rather than misread.
+const SAVE_VERSION = 1;
+function saveKey() { return ((typeof CONFIG !== 'undefined' && CONFIG.SAVE) || {}).KEY || 'mergeHarvest.save'; }
+
+// The stored run, checked and tidied — or null for a fresh start: none
+// saved, loading switched off, storage blocked, or anything malformed. A bad
+// save must never stop the game from starting.
+function readSave() {
+    const S = (typeof CONFIG !== 'undefined' && CONFIG.SAVE) || {};
+    if (S.ENABLED === false || S.LOAD === false) return null;
+    try {
+        // ?newgame in the page's address wipes the save — a fresh run to test.
+        if (typeof location !== 'undefined' && /[?&]newgame\b/.test(location.search)) {
+            localStorage.removeItem(saveKey());
+            return null;
+        }
+        const raw = localStorage.getItem(saveKey());
+        if (!raw) return null;
+        const d = JSON.parse(raw);
+        if (!d || d.v !== SAVE_VERSION) return null;
+        const int = (v, min) => (Number.isFinite(v) ? Math.max(min, Math.floor(v)) : null);
+        const top = CROP_VALUES.length;
+        const sv = {
+            coins: int(d.coins, 0),
+            cropLevel: Math.min(top, int(d.cropLevel, 1) || 1),
+            highest: int(d.highest, 1),
+            spawnLevel: int(d.spawnLevel, 1),
+            spawnCost: int(d.spawnCost, 0),
+            started: !!d.started,
+            mergeTut: !!d.mergeTut,
+            slotSeen: [0, 1, 2].map((i) => !!(d.slotSeen && d.slotSeen[i])),
+            grid: [0, 1, 2].map((r) => [0, 1, 2].map((c) => int(d.grid && d.grid[r] && d.grid[r][c], 0) || 0)),
+            slots: [0, 1, 2].map((i) => int(d.slots && d.slots[i], 0) || 0),
+            plots: Array.isArray(d.plots)
+                ? [0, 1, 2].map((i) => {
+                    const p = d.plots[i] || {};
+                    return { left: int(p.left, 0) || 0, done: !!p.done, shakeDir: -1 };
+                })
+                : null,
+        };
+        if ([sv.coins, sv.highest, sv.spawnLevel, sv.spawnCost].some((v) => v === null)) return null;
+        // EVERY PLOT DONE is a level that was about to turn: resume on the next.
+        if (sv.plots && sv.plots.every((p) => p.done)) {
+            sv.cropLevel = Math.min(top, sv.cropLevel + 1);
+            sv.plots = null;
+        }
+        return sv;
+    } catch (e) {
+        return null;
+    }
 }
 
 // Running on the developer's own machine — where the mock ad stands in.

@@ -224,6 +224,21 @@ var CONFIG = {
     // before release.
     DEBUG_LOAD_TIMING: true,
 
+    // ── SAVING ──────────────────────────────────────────────────────────────
+    // The run is kept in the browser (localStorage) so a refresh does not lose
+    // it: coins, level and how far each plot is picked, every pig in the grid
+    // and slots, the spawn button's level, and which tutorials are done.
+    // Written every EVERY_MS and when the page is hidden or closed.
+    //   LOAD false  — ignore any save at boot (always start fresh), still write
+    //   ENABLED false — no saving or loading at all
+    //   Add ?newgame to the page's address to wipe the save and start over.
+    SAVE: {
+        ENABLED:  true,
+        LOAD:     true,
+        KEY:      'mergeHarvest.save',
+        EVERY_MS: 2000,
+    },
+
     LAZY_LEVELS: {
         // All that is left of per-level loading: the backstop that lifts the
         // loading screen anyway, so a stalled download cannot lock the player out.
