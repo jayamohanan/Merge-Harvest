@@ -863,7 +863,7 @@ class GameScene extends Phaser.Scene {
         this._sliceCrops();
         this.createSlots();
         this.buildCrops();
-        this._makeFieldMini();
+        this._deferFieldMini();
         this._showStumpPreview();
         this._showCropPreview();
         this._showFieldMapPreview();
@@ -3521,6 +3521,9 @@ class GameScene extends Phaser.Scene {
     _advanceFieldMap(finished, turn, done) {
         const M  = CONFIG.FIELD_MAP || {};
         const MI = M.MINI || {};
+        // Not built yet (a level finished before the deferred build ran):
+        // build it now rather than skip the card.
+        if (!this.fieldMini) this._makeFieldMini();
         const map = this.fieldMini;
         if (M.ENABLED === false || !map || !map.box.scene) { turn(); done(); return; }
         const batchOf = (lvl) => Math.floor((lvl - 1) / 5);
@@ -3904,6 +3907,24 @@ class GameScene extends Phaser.Scene {
 
     // The card, put up for the level being played — called whenever the farm
     // half is laid out. None past the last level.
+    // THE CARD IS NOT BUILT AT BOOT. It stays hidden all through level 1, and
+    // painting it is some of the heaviest work the opening view would do —
+    // inside the load Poki times. So it is built FIELD_MAP.BUILD_DELAY_MS after
+    // the loading screen has gone, while the player is on the start tutorial.
+    // A relayout before then builds it itself (_relayout -> _makeFieldMini),
+    // and the deferred call then leaves it alone.
+    _deferFieldMini() {
+        const wait = () => {
+            if (!this.sys.isActive()) return;
+            if (!loadingScreenDone) { this.time.delayedCall(250, wait); return; }
+            const ms = (CONFIG.FIELD_MAP || {}).BUILD_DELAY_MS;
+            this.time.delayedCall(ms !== undefined ? ms : 1000, () => {
+                if (!this.fieldMini) this._makeFieldMini();
+            });
+        };
+        wait();
+    }
+
     _makeFieldMini() {
         const M = CONFIG.FIELD_MAP || {};
         if (this.fieldMini) this._hideMapTitle(this.fieldMini, 0);

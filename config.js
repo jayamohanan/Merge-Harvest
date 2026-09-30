@@ -222,7 +222,7 @@ var CONFIG = {
     // [timing] lines in the console: how long each stage before play took, and
     // the slowest downloads. For finding where the loading time goes; turn off
     // before release.
-    DEBUG_LOAD_TIMING: false,
+    DEBUG_LOAD_TIMING: true,
 
     LAZY_LEVELS: {
         // All that is left of per-level loading: the backstop that lifts the
@@ -765,6 +765,10 @@ var CONFIG = {
         // or the file named here where it differs from the crop's name.
         ICON_DIR:   'graphics/crop/icon/',
         ICON_FILES: {},
+        // The card is built this long after the loading screen has gone, not
+        // at boot — it is hidden all through level 1, and painting it there
+        // would count against the load Poki times.
+        BUILD_DELAY_MS: 1000,
         // PREVIEW ONLY: every section's card, one at a time, where the game
         // shows it — ‹ › or the arrow keys to step through. Covers the farm
         // info and crop; does nothing. ENABLED: false to play.
