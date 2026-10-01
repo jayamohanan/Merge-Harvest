@@ -2705,7 +2705,7 @@ class GameScene extends Phaser.Scene {
     // (_bankFruit). `h` is its plant's height; `delay` holds it for its place
     // in a chain.
     //
-    // IT STOPS HALF WAY UP FROM THE PLANT'S TOP TO THE BANK'S CENTRE —
+    // IT STOPS HALF WAY UP FROM THE PLANT'S TOP TO THE BANK'S BOTTOM EDGE —
     // LIFT_FRAC of that vertical gap above the top of the plant it came off.
     // Measured from the PLANT, not from where the produce hangs, so every
     // fruit off one plant stops at the same height, low-hanging or high. It
@@ -2722,7 +2722,11 @@ class GameScene extends Phaser.Scene {
             // The plant's top: its foot (kept on the fruit) less its height.
             const foot = fr._foot ? fr._foot.y : fr.y + h / 2;
             const plantTop = foot - h;
-            const stopY = plantTop + (pig.y - plantTop) * (H.LIFT_FRAC !== undefined ? H.LIFT_FRAC : 0.5);
+            // The bank's BOTTOM edge, at its rest size — not mid-squash, so a
+            // pop running as this fruit is picked does not move the target.
+            const sy = pig.restScaleY !== undefined ? pig.restScaleY : pig.scaleY;
+            const pigBottom = pig.y + (pig.height * sy) / 2;
+            const stopY = plantTop + (pigBottom - plantTop) * (H.LIFT_FRAC !== undefined ? H.LIFT_FRAC : 0.5);
             lift = Math.max(least, fr.y - stopY);
         }
         this.tweens.add({

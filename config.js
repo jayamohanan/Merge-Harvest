@@ -1471,7 +1471,7 @@ var CONFIG = {
         PICK: {
             ENABLED: true,
             // THE LIFT STOPS at LIFT_FRAC of the vertical way from the TOP OF
-            // THE PLANT to its bank's centre (0.5: half way) — the same height
+            // THE PLANT to its bank's BOTTOM edge (0.5: half way) — the same height
             // for every fruit off one plant, and never at the bank. At least
             // LIFT_MIN of a plant height, so the pluck always shows.
             LIFT_FRAC: 0.5,
