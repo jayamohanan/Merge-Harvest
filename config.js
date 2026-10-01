@@ -106,7 +106,7 @@ var CONFIG = {
         BATCH:    4,        // icons per tick, so ~4.5 per second at the default
     },
 
-    BATTERY_START_LEVEL: 60,
+    BATTERY_START_LEVEL: 1,
     // Coins a new run starts with. Default 2500; raise it to debug later levels.
     START_COINS: 25000000000,
     // THE ECONOMY — on the same 2.5× scale as the crop and piggy tables (see
