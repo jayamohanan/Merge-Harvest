@@ -39,6 +39,7 @@ rsync -a \
   --exclude '._*' \
   --exclude 'build' \
   --exclude 'build.sh' \
+  --exclude 'build.command' \
   --exclude 'dev' \
   --exclude 'tools' \
   --exclude 'style' \

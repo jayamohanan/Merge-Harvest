@@ -781,7 +781,7 @@ class GameScene extends Phaser.Scene {
         for (let r = 0; r < this.GRID_ROWS; r++) {
             for (let c = 0; c < this.GRID_COLS; c++) {
                 const lv = sv.grid[r] && sv.grid[r][c];
-                if (lv > 0) this.spawnBatteryInGrid(r, c, lv);
+                if (lv > 0) this.spawnBatteryInGrid(r, c, lv, false);
             }
         }
         sv.slots.forEach((lv, i) => { if (lv > 0) this.addBatteryToSlot(i, lv); });
@@ -5733,7 +5733,9 @@ class GameScene extends Phaser.Scene {
         }).setOrigin(1, 0.5).setDepth(10);
     }
 
-    async spawnBatteryInGrid(row, col, level) {
+    // `animate` false: no spawn bounce — a pig being PUT BACK (a save
+    // restored), not newly made, simply stands there at its size.
+    async spawnBatteryInGrid(row, col, level, animate = true) {
         const cell = this.gridCells[row][col];
         const iconLvl = getBatteryIconLevel(level);
 
@@ -5769,7 +5771,7 @@ class GameScene extends Phaser.Scene {
         this.grid[row][col] = batteryData;
         cell.filledBg.setVisible(true);
         cell.isEmpty = false;
-        this.playSpawnAnimation(batteryData);
+        if (animate) this.playSpawnAnimation(batteryData);
         return batteryData;
     
     }
@@ -5777,9 +5779,17 @@ class GameScene extends Phaser.Scene {
     playSpawnAnimation(bd) {
         // The icon is no longer square, so the squash and stretch has to run
         // off its two sides separately rather than one figure for both.
-        const bw = bd.sprite.displayWidth, bh = bd.sprite.displayHeight;
+        //
+        // ON THE SPRITE'S SCALE, NOT ITS ON-SCREEN SIZE. A pig whose picture is
+        // still downloading wears a stand-in — maybe Phaser's 32×32 missing
+        // texture — and swaps to its own mid-bounce (dressWhenReady). A swap
+        // keeps the SCALE, which is the same for every pig picture (see
+        // fitItemIcon); a bounce tweening the stand-in's pixel size would end
+        // on that size and squeeze the real picture into it, leaving the pig
+        // small for good.
+        const bx = bd.sprite.scaleX, by = bd.sprite.scaleY;
         const a    = CONFIG.SPAWN_ANIMATION;
-        bd.sprite.setDisplaySize(bw * a.INITIAL_SCALE_X, bh * a.INITIAL_SCALE_Y);
+        bd.sprite.setScale(bx * a.INITIAL_SCALE_X, by * a.INITIAL_SCALE_Y);
         bd.levelText.setScale(a.INITIAL_SCALE_X, a.INITIAL_SCALE_Y);
         const seq = [
             [a.STRETCH_SCALE_X, a.STRETCH_SCALE_Y, a.STRETCH_DURATION],
@@ -5791,7 +5801,7 @@ class GameScene extends Phaser.Scene {
             chain = chain.then(() => new Promise(res => {
                 this.tweens.add({
                     targets: bd.sprite,
-                    displayWidth: bw * sx, displayHeight: bh * sy,
+                    scaleX: bx * sx, scaleY: by * sy,
                     duration: dur, ease: 'Cubic.easeOut', onComplete: res,
                 });
                 this.tweens.add({
