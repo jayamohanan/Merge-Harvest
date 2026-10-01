@@ -234,7 +234,7 @@ var CONFIG = {
     //   ENABLED false — no saving or loading at all
     //   Add ?newgame to the page's address to wipe the save and start over.
     SAVE: {
-        ENABLED:  true,
+        ENABLED:  false,   // OFF FOR NOW: every load starts fresh, nothing is saved
         LOAD:     true,
         KEY:      'mergeHarvest.save',
         EVERY_MS: 2000,
