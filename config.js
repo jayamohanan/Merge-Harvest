@@ -1046,7 +1046,7 @@ var CONFIG = {
         // corn 238), so nothing declares the height and _sliceCrops reads it.
         LEVELS: ['tomato', 'sunflower',    'corn',        'egg-plant', 'melon',
                  'potato',     'bell-pepper', 'onion',     'pumpkin',
-                 'strawberry', 'sunflower',   'banana',    'chilly-pepper',
+                 'strawberry',  'banana',    'chilly-pepper',
                  'pineapple',  'broccoli',    'cabbage',   'lettuce',
                  'carrot',     'tulip',       'lavender',  'poppy',
                  'rose'],
