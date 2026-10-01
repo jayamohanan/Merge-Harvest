@@ -4685,9 +4685,11 @@ class GameScene extends Phaser.Scene {
                 // ONE SIZE FOR EVERY FIELD: every icon ICON_SIZE on the card
                 // (its longer side), every name at its full NAME_SIZE —
                 // however big or small the field, so all of them read as a set.
-                // Centred on the field; a small field's may reach past its edges.
+                // EXCEPT A NAME TOO WIDE FOR ITS FIELD: that one is shrunk to
+                // NAME_FIT of the field's width, or a long name ("Sunflower") in
+                // a narrow field runs into its neighbour's.
                 const fi = (U.ICON_SIZE !== undefined ? U.ICON_SIZE : 56) * s / kc / Math.max(iw, ih);
-                const fn = 1;
+                const fn = Math.min(1, (q.w * (U.NAME_FIT !== undefined ? U.NAME_FIT : 0.92)) / nm.width);
                 const groupH = (nm.height + gap) * fn + ih * fi;
                 let cx = q.x + q.w / 2, top = q.y + (q.h - groupH) / 2;
                 // CLEAR OF THE LEVEL NUMBER in the field's top-left corner: a

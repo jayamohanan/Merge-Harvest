@@ -108,7 +108,7 @@ var CONFIG = {
 
     BATTERY_START_LEVEL: 1,
     // Coins a new run starts with. Default 2500; raise it to debug later levels.
-    START_COINS: 25000000000,
+    START_COINS: 2500,
     // THE ECONOMY — on the same 2.5× scale as the crop and piggy tables (see
     // THE ECONOMY'S RULES in cropData.js).
     ECONOMY: {
@@ -223,7 +223,7 @@ var CONFIG = {
     // [timing] lines in the console: how long each stage before play took, and
     // the slowest downloads. For finding where the loading time goes; turn off
     // before release.
-    DEBUG_LOAD_TIMING: true,
+    DEBUG_LOAD_TIMING: false,
 
     // ── SAVING ──────────────────────────────────────────────────────────────
     // The run is kept in the browser (localStorage) so a refresh does not lose
@@ -235,7 +235,7 @@ var CONFIG = {
     //   Add ?newgame to the page's address to wipe the save and start over.
     SAVE: {
         ENABLED:  true,
-        LOAD:     false,
+        LOAD:     true,
         KEY:      'mergeHarvest.save',
         EVERY_MS: 2000,
     },
@@ -928,7 +928,10 @@ var CONFIG = {
                 ICON_SIZE:  56,    // px @ design, as it shows on the card — every
                                    // field's the same, whatever its size
                 NAME_SIZE:  21,    // (16 × 1.3) the crop's name over it, px @ design on the card —
-                                   // likewise the same on every field
+                                   // likewise the same on every field…
+                NAME_FIT:   0.92,  // …unless wider than this share of its field's
+                                   // width: then shrunk to fit, so neighbouring
+                                   // names never run into each other
                 // Shown, the icon (and name) swell and settle once — up to
                 // PULSE_SCALE and back over PULSE_MS — then the card goes.
                 PULSE_SCALE:  1.2,
@@ -1278,7 +1281,7 @@ var CONFIG = {
             // LAST place of a full ROW_MAX row and holding the plot's whole
             // figure; the places in front of it are stumps. For checking the
             // harvest from the highest, furthest-back spot. false for the game.
-            DEBUG_BACK_ONLY: true,
+            DEBUG_BACK_ONLY: false,
             // PREVIEW ONLY: a panel over the farm half showing every plot's
             // row as COUNT stumps of CROP, where a real level would stand
             // them, with a line through each row's feet — for lining the three
