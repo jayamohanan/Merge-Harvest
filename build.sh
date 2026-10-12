@@ -43,6 +43,7 @@ rsync -a \
   --exclude 'dev' \
   --exclude 'tools' \
   --exclude 'style' \
+  --exclude '/store' \
   --exclude '*.md' \
   --exclude 'sounds' \
   --exclude 'untitled folder' \
