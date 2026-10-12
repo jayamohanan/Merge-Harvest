@@ -6587,28 +6587,11 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    // THE LEVEL-UP-ALL REWARD, BEHIND A REWARDED AD. No ad SDK is wired in:
-    // the mock ad on a local dev server (to test the flow), and no reward
-    // anywhere else.
+    // THE LEVEL-UP-ALL REWARD, BEHIND A REWARDED AD. No ad SDK is wired in,
+    // so the mock ad (an AD.DURATION countdown) stands in everywhere.
     levelUpAll() {
         if (this.isWatchingAd) return;  // Prevent multiple ad triggers
-        if (isLocalDev()) { this.showMockAd(() => this.performLevelUpAll()); return; }
-        this._adUnavailable();
-    }
-
-    // No ad to show, so no reward: said briefly over the button rather than
-    // the tap simply doing nothing.
-    _adUnavailable() {
-        const b = this.levelUpButton;
-        if (!b || !b.scene) return;
-        const s = this.layoutConfig.colScale || this.layoutConfig.scale;
-        const t = this.add.text(b.x, b.y - (this.layoutConfig.spawnBtnDisplayH || 60) * 0.6,
-            (CONFIG.AD || {}).UNAVAILABLE_TEXT || 'No ad available right now', {
-                fontSize: Math.round(22 * s) + 'px', fontFamily: CONFIG.FONT_FAMILY, fontStyle: CONFIG.FONT_WEIGHT,
-                color: '#fff6e0', stroke: '#3b2a17', strokeThickness: Math.max(2, Math.round(3 * s)),
-            }).setOrigin(0.5, 1).setDepth(101);
-        this.tweens.add({ targets: t, y: t.y - 24 * s, alpha: 0, delay: 900, duration: 500,
-            onComplete: () => t.destroy() });
+        this.showMockAd(() => this.performLevelUpAll());
     }
 
     showMockAd(onComplete) {
@@ -7218,12 +7201,6 @@ function readSave() {
     } catch (e) {
         return null;
     }
-}
-
-// Running on the developer's own machine — where the mock ad stands in.
-function isLocalDev() {
-    if (typeof location === 'undefined') return false;
-    return location.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)$/.test(location.hostname);
 }
 
 // THE PARENT PAGE MUST NOT SCROLL under the game — arrow keys, space and the
