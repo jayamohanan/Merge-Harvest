@@ -1359,8 +1359,8 @@ class GameScene extends Phaser.Scene {
         this.slotY          = this.farmRows[1].cy;
         this.slotSize       = ssz;
 
-        // The face texture the filled state uses, baked at the GRID's cell size
-        // and scaled down here — one texture for both blocks.
+        // The grid's cell faces, baked at the GRID's cell size and scaled down
+        // here — one set of textures for both blocks.
         this._makeCellTextures(L.cellSize);
 
         for (let i = 0; i < 3; i++) {
@@ -1371,16 +1371,13 @@ class GameScene extends Phaser.Scene {
             const slotX  = this.farmRows[i].cx;
             const slotYi = this.farmRows[i].cy + box.h / 2 + head + slotGap + ssz / 2;
 
-            // The empty square, stroke and all, stays up the whole time; filling
-            // the slot lays the grid's grained face over its INSIDE only, sized
-            // to the stroke's inner edge, so the stroke never goes away.
-            const slotBg = this.add.graphics();
-            this._drawSlot(slotBg, slotX, slotYi, ssz, false);
-            slotBg.setDepth(3);
-            const strokeW = Math.max(1, Math.round(CONFIG.CELL.INSET_BORDER_WIDTH * ssz / CONFIG.PLATFORM.SLOT_SIZE));
-            const face = Math.round(ssz - 2 * strokeW);
-            const slotBgFilled = this.add.image(slotX, slotYi, 'cell_face')
-                .setDisplaySize(face, face).setDepth(3).setVisible(false);
+            // The SAME faces as the grid's cells: the empty one stays up the
+            // whole time, and filling the slot lays the filled one over it —
+            // same size and shape, so it covers it exactly.
+            const slotBg = this.add.image(slotX, slotYi, 'cell_empty')
+                .setDisplaySize(ssz, ssz).setDepth(3);
+            const slotBgFilled = this.add.image(slotX, slotYi, 'cell_filled')
+                .setDisplaySize(ssz, ssz).setDepth(3).setVisible(false);
 
             // What this cell gives, UNDER its square. It used to sit above,
             // which was the free side back when the plant stood BESIDE the
@@ -5231,7 +5228,7 @@ class GameScene extends Phaser.Scene {
             ctx.arcTo(x,     y,     x + w, y,     r);
             ctx.closePath();
         };
-        const bake = (key, faceColor, bevel) => {
+        const bake = (key, faceColor, bevel, dash) => {
             if (this.textures.exists(key)) this.textures.remove(key);
             const canvas = this.textures.createCanvas(key, px, px);
             const ctx = canvas.getContext();
@@ -5263,15 +5260,25 @@ class GameScene extends Phaser.Scene {
                 ctx.drawImage(noise, o, o, (px - 2 * o) / z, (px - 2 * o) / z);
                 ctx.restore();
             }
+            // THE EMPTY CELL'S DASHED LINE — "something goes here".
+            if (dash && C.EMPTY_DASH_COLOR) {
+                const lw = Math.max(1, Math.round(px * 0.018));
+                const d  = o + Math.round(px * 0.08);
+                ctx.save();
+                ctx.setLineDash([lw * 3, lw * 2.5]);
+                ctx.lineWidth = lw;
+                ctx.strokeStyle = hexStr(C.EMPTY_DASH_COLOR);
+                path(ctx, d, d, px - 2 * d, px - 2 * d, Math.max(1, rad - d + o));
+                ctx.stroke();
+                ctx.restore();
+            }
             canvas.refresh();
         };
-        bake('cell_empty',  hexStr(C.EMPTY_BG_COLOR),  true);
+        bake('cell_empty',  hexStr(C.EMPTY_BG_COLOR),  true, true);
         bake('cell_filled', hexStr(C.FILLED_BG_COLOR), true);
         bake('cell_face',   hexStr(C.FILLED_BG_COLOR), false);   // no bevel: inside the battery case
     }
 
-    // The stand-alone slot face (portrait only — inside the battery case the
-    // divisions use the baked cell texture instead).
     // A stable pseudo-random value in [0,1) for a cell, per `salt`. Same cell,
     // same number, every rebuild — which is the point: it decides which way each
     // cell's grain is mirrored, and a Math.random() there would reshuffle the
@@ -5280,27 +5287,6 @@ class GameScene extends Phaser.Scene {
         let h = (col * 374761393) ^ (row * 668265263) ^ ((salt || 0) * 2147483647);
         h = Math.imul(h ^ (h >>> 13), 1274126177);
         return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
-    }
-
-    _drawSlot(gfx, x, y, size, filled) {
-        const shadow = hexColor(CONFIG.CELL.INSET_SHADOW_COLOR);
-        const fill   = filled ? hexColor(CONFIG.CELL.FILLED_BG_COLOR) : hexColor(CONFIG.CELL.EMPTY_BG_COLOR);
-        const inset  = Math.max(1, Math.round(CONFIG.CELL.INSET_BORDER_WIDTH * size / CONFIG.PLATFORM.SLOT_SIZE));
-        const r      = Math.round(CONFIG.PLATFORM.SLOT_RADIUS * size / CONFIG.PLATFORM.SLOT_SIZE);
-        // THE EMPTY FACE IS SEE-THROUGH (PLATFORM.SLOT_EMPTY_ALPHA), so an
-        // empty slot reads as a hole in the ground rather than a tile of some
-        // other colour. So the rim is a RING, stroked, not a full square under
-        // the face — a square there would show through the face instead of
-        // the ground.
-        const a = filled ? 1 : (CONFIG.PLATFORM.SLOT_EMPTY_ALPHA !== undefined
-                                ? CONFIG.PLATFORM.SLOT_EMPTY_ALPHA : 1);
-        gfx.clear();
-        gfx.fillStyle(fill, a);
-        gfx.fillRoundedRect(x - size / 2 + inset, y - size / 2 + inset,
-            size - inset * 2, size - inset * 2, Math.max(1, r - inset));
-        gfx.lineStyle(inset, shadow, 1);
-        gfx.strokeRoundedRect(x - size / 2 + inset / 2, y - size / 2 + inset / 2,
-            size - inset, size - inset, Math.max(1, r - inset / 2));
     }
 
     // THE RULE BETWEEN THE TWO HALVES.
@@ -5658,13 +5644,7 @@ class GameScene extends Phaser.Scene {
         const C     = CONFIG.CELL;
         const panel = this.gridPanel = this.add.graphics().setDepth(3.4);   // over the farm slots (3)
         const radius = Math.round(C.GRID_PANEL_RADIUS * L.colScale);
-        const border = Math.max(1, Math.round(C.GRID_PANEL_BORDER_WIDTH * L.colScale));
-        panel.fillStyle(hexColor(C.GRID_PANEL_COLOR), 1);
-        panel.fillRoundedRect(cx - panW / 2, cy - panH / 2, panW, panH, radius);
-        if (border > 0) {
-            panel.lineStyle(border, hexColor(C.GRID_PANEL_BORDER_COLOR), 1);
-            panel.strokeRoundedRect(cx - panW / 2, cy - panH / 2, panW, panH, radius);
-        }
+        this._drawWoodPanel(panel, cx - panW / 2, cy - panH / 2, panW, panH, radius, L.colScale, C.GRID_PANEL_COLOR, pad - 1, 0);
 
         this._makeCellTextures(this.CELL_SIZE);
         for (let row = 0; row < this.GRID_ROWS; row++) {
@@ -5688,6 +5668,79 @@ class GameScene extends Phaser.Scene {
                 this.gridCells[row][col] = { x, y, row, col, isEmpty: true, cell: emptyCell, filledBg };
             }
         }
+    }
+
+    // THE WOODEN FRAME (CELL.GRID_PANEL_WOOD), drawn into `panel` — layered
+    // rounded rects, outside in: shadow, dark edge, shaded wood, lit wood,
+    // grain, highlight, lip, then `fill` inside. Shared by the grid panel and
+    // the spawn button so the two match. `s` scales the design px; `maxWood`
+    // caps the band and `woodK` thins it; `salt` varies the grain between panels.
+    // `raised` ({ SHADE, EDGE, HIGHLIGHT }) makes the inside a raised pad, not a
+    // sunk tray: no dark lip, a darker strip under it, a light line on top.
+    _drawWoodPanel(panel, x0, y0, panW, panH, radius, s, fill, maxWood, salt, woodK, raised) {
+        const C      = CONFIG.CELL;
+        const border = Math.max(1, Math.round(C.GRID_PANEL_BORDER_WIDTH * s));
+        const Wd  = C.GRID_PANEL_WOOD || {}, v = (x, d) => (x !== undefined ? x : d);
+        // INNER CORNERS STAY ROUND. Strictly concentric would be radius − inset,
+        // which leaves the cream tray almost square-cornered inside a round
+        // frame; the mockup keeps every ring visibly rounded.
+        const rr  = (inset) => Math.max(2, radius - inset, radius * v(Wd.INNER_ROUND, 0.6));
+        const box = (inset, color, alpha, dy, cut) => {
+            panel.fillStyle(hexColor(color), alpha);
+            panel.fillRoundedRect(x0 + inset, y0 + inset + (dy || 0),
+                panW - 2 * inset, panH - 2 * inset - (cut || 0), rr(inset));
+        };
+        const woodW = Math.min(maxWood, Math.max(border + 2, Math.round(v(Wd.WIDTH, 13) * s * v(woodK, 1))));
+        const lip   = Math.max(1, Math.round(v(Wd.LIP, 2) * s));
+        box(0, v(Wd.SHADOW_COLOR, '#000000'), v(Wd.SHADOW_ALPHA, 0.18), Math.round(v(Wd.SHADOW_Y, 5) * s));
+        box(0, C.GRID_PANEL_BORDER_COLOR, 1);
+        box(border, v(Wd.DARK, '#8c5226'), 1);
+        box(border, v(Wd.COLOR, '#b5733a'), 1, 0, Math.max(1, Math.round(v(Wd.BEVEL, 3) * s)));
+        // GRAIN: two broken strokes along each side of the band. Lengths and
+        // gaps come from _cellHash, so the frame looks the same every rebuild.
+        const band = woodW - border;
+        panel.lineStyle(Math.max(1, 1.3 * s), hexColor(v(Wd.GRAIN_COLOR, '#7a4520')), v(Wd.GRAIN_ALPHA, 0.45));
+        const grain = (side, a0, a1, at) => {
+            let a = a0, k = 0;
+            while (a < a1) {
+                const len = (0.12 + 0.25 * this._cellHash(side, k, 31 + salt)) * (a1 - a0);
+                const b = Math.min(a1, a + len);
+                const p = at + (this._cellHash(side, k, 32 + salt) - 0.5) * band * 0.15;
+                panel.beginPath();
+                if (side % 4 < 2) { panel.moveTo(a, p); panel.lineTo(b, p); }
+                else          { panel.moveTo(p, a); panel.lineTo(p, b); }
+                panel.strokePath();
+                a = b + (0.12 + 0.2 * this._cellHash(side, k, 33 + salt)) * (a1 - a0);
+                k++;
+            }
+        };
+        [0.38, 0.7].forEach((f, n) => {
+            const o = border + band * f;
+            grain(0 + 4 * n, x0 + radius, x0 + panW - radius, y0 + o);          // top
+            grain(1 + 4 * n, x0 + radius, x0 + panW - radius, y0 + panH - o);   // bottom
+            grain(2 + 4 * n, y0 + radius, y0 + panH - radius, x0 + o);          // left
+            grain(3 + 4 * n, y0 + radius, y0 + panH - radius, x0 + panW - o);   // right
+        });
+        // The light catching the top edge of the wood.
+        panel.lineStyle(Math.max(1, 1.5 * s), hexColor(v(Wd.HIGHLIGHT, '#e3a868')), 0.9);
+        panel.beginPath();
+        panel.moveTo(x0 + radius, y0 + border + Math.max(1, s));
+        panel.lineTo(x0 + panW - radius, y0 + border + Math.max(1, s));
+        panel.strokePath();
+        if (raised) {
+            const edge = Math.max(1, Math.round(v(raised.EDGE, 3) * s));
+            box(woodW, v(raised.SHADE, '#e3cba0'), 1);
+            box(woodW, fill, 1, 0, edge);
+            const hy = y0 + woodW + Math.max(1, s);
+            panel.lineStyle(Math.max(1, 1.5 * s), hexColor(v(raised.HIGHLIGHT, '#ffffff')), 0.9);
+            panel.beginPath();
+            panel.moveTo(x0 + woodW + rr(woodW), hy);
+            panel.lineTo(x0 + panW - woodW - rr(woodW), hy);
+            panel.strokePath();
+            return;
+        }
+        box(woodW, v(Wd.LIP_COLOR, '#6b3c1b'), 1);
+        box(woodW + lip, fill, 1);
     }
 
     createCoinDisplay() {
@@ -5804,6 +5857,7 @@ class GameScene extends Phaser.Scene {
     }
 
     async createButtons() {
+        const v = (x, d) => (x !== undefined ? x : d);
         const W = this.scale.width;
         const H = this.scale.height;
         const L = this.layoutConfig;
@@ -5817,7 +5871,20 @@ class GameScene extends Phaser.Scene {
 
         // Spawn button
         const spawnBtn = this.add.container(spawnButtonX, spawnButtonY).setDepth(100);
-        const spawnBg  = this.add.image(0, 0, 'button')
+        // THE BUTTON'S FACE is the grid's wooden frame, drawn and baked into a
+        // texture at its exact size — an image still, so the disabled tint and
+        // the hit area work as they did with the old art. Rebaked every build.
+        const bw = Math.round(L.spawnBtnDisplayW), bh = Math.round(L.spawnBtnDisplayH);
+        const BW = (CONFIG.BUTTON || {}).WOOD || {};
+        const bs = L.colScale;
+        const shY = Math.round(v(((CONFIG.CELL.GRID_PANEL_WOOD || {}).SHADOW_Y), 5) * bs);
+        const g = this.make.graphics({ add: false });
+        this._drawWoodPanel(g, 0, 0, bw, bh - shY, Math.round(v(BW.RADIUS, 18) * bs), bs,
+            v(BW.FILL, CONFIG.CELL.FILLED_BG_COLOR), Math.round(v(BW.MAX_WOOD, 0.2) * bh), 7, v(BW.THICKNESS, 1), BW.RAISED);
+        if (this.textures.exists('spawn_wood')) this.textures.remove('spawn_wood');
+        g.generateTexture('spawn_wood', bw, bh);
+        g.destroy();
+        const spawnBg  = this.add.image(0, 0, 'spawn_wood')
             .setDisplaySize(L.spawnBtnDisplayW, L.spawnBtnDisplayH)
             .setInteractive({ useHandCursor: true });
         this.spawnButtonText = this.add.text(
@@ -5935,13 +6002,13 @@ class GameScene extends Phaser.Scene {
 
     // THE PAGE AROUND THE CANVAS, SHADED WITH AN OVERLAY. An overlay is drawn
     // inside the canvas, but on a frame whose shape the stage does not match
-    // exactly, a strip of the page (html/body, the ground's #d5ba95) shows
+    // exactly, a strip of the page (html/body, the ground's #e0c493) shows
     // round it — invisible normally, a bright line once the game is darkened.
     // So the page takes the colour the overlay makes over the ground, fading
     // with it: `color` + `alpha` the overlay's, null to put the page back.
     _shadePage(color, alpha, ms) {
         if (typeof document === 'undefined') return;
-        const ground = '#d5ba95';
+        const ground = '#e0c493';
         let css = '';
         if (color) {
             const g = hexColor(ground), c = hexColor(color), a = Math.max(0, Math.min(1, alpha));
@@ -7022,7 +7089,7 @@ const config = {
     // The canvas's own clear colour — what shows wherever nothing is drawn,
     // which since the panel's corners were rounded means those four notches.
     // Matched to the page behind it so the two cannot be told apart.
-    backgroundColor: '#d5ba95',
+    backgroundColor: '#e0c493',
     scene: [GameScene],
     scale: {
         // FIT/ENVELOP means Phaser owns the canvas's DISPLAY size and keeps it

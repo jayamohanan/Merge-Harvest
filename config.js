@@ -122,8 +122,8 @@ var CONFIG = {
         // showing through (set on the Phaser game config in game.js). Keeping
         // this the same value makes the seam between the two halves disappear
         // instead of reading as two different panels.
-        GRADIENT_START_COLOR: "#d5ba95",
-        GRADIENT_END_COLOR: "#d5ba95",
+        GRADIENT_START_COLOR: "#e0c493",
+        GRADIENT_END_COLOR: "#e0c493",
         // HOW OPAQUE THE PANEL CARD IS. It was 0 while the farm's own ground
         // sheet ran under both halves and was the better background; that sheet
         // went with the farm, so the card is what the UI half is made of now.
@@ -249,6 +249,22 @@ var CONFIG = {
     BUTTON: {
         SPAWN_WIDTH: 250,
         SPAWN_HEIGHT: 90,
+        // THE SPAWN BUTTON'S FACE — the grid's wooden frame (CELL.GRID_PANEL_WOOD),
+        // drawn at the button's size, no art.
+        WOOD: {
+            RADIUS:   24,          // px @ design
+            FILL:     "#fdf5e3",   // the cream inside
+            MAX_WOOD: 0.2,         // the wood band never takes more than this share of the height
+            THICKNESS: 0.875,      // × the grid's wood width (CELL.GRID_PANEL_WOOD.WIDTH)
+            // THE CREAM AS A RAISED PAD, not a sunk tray like the grid's: no dark
+            // lip, a darker strip under it for thickness, a light line on top.
+            // null = the grid's tray look.
+            RAISED: {
+                SHADE:     "#e3cba0",  // the pad's thickness, along its bottom
+                EDGE:      4,          // px @ design of that strip
+                HIGHLIGHT: "#ffffff",  // the line along its top
+            },
+        },
         LEVELUP_WIDTH: 180,
         LEVELUP_HEIGHT: 70,
         BOTTOM_PADDING: 70,
@@ -303,9 +319,10 @@ var CONFIG = {
         SIZE: 130,
         GAP: 4,
         RADIUS: 15,
-        EMPTY_BG_COLOR: "#c2d1e0",
-        FILLED_BG_COLOR: "#eaf0f6",
-        INSET_SHADOW_COLOR: "#364549",
+        EMPTY_BG_COLOR: "#e8d2a6",     // a sunken tan, so an empty cell reads as a hole
+        FILLED_BG_COLOR: "#fdf5e3",    // warm cream card under a piggy
+        INSET_SHADOW_COLOR: "#b48a58", // the soft brown rim round every cell
+        EMPTY_DASH_COLOR: "#c9a873",   // dashed line inside an EMPTY cell; null = none
         INSET_BORDER_WIDTH: 3.5,
         // Grain over the flat cell colour. ui/merge-grid/cell_noise.webp is neutral
         // grey with blurred noise, blended over the fill when the cell faces are
@@ -408,13 +425,32 @@ var CONFIG = {
         },
         DRAGGABLE_BG_COLOR: "#FFFFFF",
         DRAGGABLE_BG_ALPHA: 0,
-        GRID_PANEL_PADDING: 14,        // the panel is a drawn rounded square now,
+        GRID_PANEL_PADDING: 18,        // the panel is a drawn rounded square now,
                                        // so this is real padding around the cells
                                        // rather than the old art's baked margin
-        GRID_PANEL_COLOR: "#ccd5d7",
-        GRID_PANEL_RADIUS: 15,         // px @ design scale
-        GRID_PANEL_BORDER_COLOR: "#364549",
+        GRID_PANEL_COLOR: "#f1dfba",   // the cream tray the cells sit in
+        GRID_PANEL_RADIUS: 26,         // px @ design scale
+        GRID_PANEL_BORDER_COLOR: "#8a5a32",   // the frame's dark outer edge
         GRID_PANEL_BORDER_WIDTH: 3,
+        // THE WOODEN FRAME, drawn — no art. A band of wood inside the padding
+        // (WIDTH must stay under GRID_PANEL_PADDING, the rest is cream tray),
+        // lighter on top and darker below so it reads as rounded, with a few
+        // grain strokes, a top highlight and a dark lip where it meets the tray.
+        GRID_PANEL_WOOD: {
+            WIDTH:        10.4,        // px @ design, outer edge included
+            INNER_ROUND:  0.6,         // inner rings keep at least this × the outer radius
+            COLOR:        "#c98d52",   // the wood's face
+            DARK:         "#b07840",   // its lower, shaded side
+            BEVEL:        3,           // px @ design of that darker strip at the bottom
+            GRAIN_COLOR:  "#9a6434",
+            GRAIN_ALPHA:  0.28,
+            HIGHLIGHT:    "#ebbb82",   // the thin light line along the top
+            LIP_COLOR:    "#9a6a3e",   // ring between wood and tray
+            LIP:          2,           // px @ design
+            SHADOW_COLOR: "#000000",   // drop shadow under the whole panel
+            SHADOW_ALPHA: 0.18,
+            SHADOW_Y:     5,           // px @ design
+        },
     },
 
     SPAWN_ANIMATION: {
@@ -608,11 +644,6 @@ var CONFIG = {
         SLOT_SIZE: 130,                // reference slot square (px) — the ratio
                                        // every slot-derived size is measured in
         SLOT_RADIUS: 15,               // corner radius (px)
-        SLOT_EMPTY_ALPHA: 0,           // an EMPTY slot's face: 0 is no face at
-                                       // all — just the rim, with the brown
-                                       // ground inside it, so it reads as empty
-                                       // rather than as another colour. Filled,
-                                       // the slot takes its grained face as ever
         CHARGE_RATE_GAP: 2,            // gap (px) between a slot's bottom edge
                                        // and the charge-rate figure under it.
                                        // The font's own top padding adds to
@@ -1147,7 +1178,7 @@ var CONFIG = {
             // ones are simply one colour. GROUND has to be the farm half's
             // floor colour — the canvas background in game.js. null draws them
             // see-through as before (for a ground that is not one flat colour).
-            GROUND:     '#d5ba95',
+            GROUND:     '#e0c493',
             // A crop's own WIDTH_FRAC, keyed by name, where the default reads
             // too wide or too narrow — usually because the plant does not fill
             // its frame the way the reference crop does. Empty until a crop is

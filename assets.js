@@ -50,7 +50,6 @@ function sharedAssets() {
     // Where the harvest goes — three of them over the field, one per plot.
     A.image('piggy_bank', 'graphics/ui/piggy_bank.webp');
     A.image('point',      'graphics/ui/merge-grid/point.webp');
-    A.image('button',     'graphics/ui/merge-grid/spawn_button.webp');
     // The level-up-all button — text, icon and all baked into the one file,
     // so nothing is drawn over it (see createButtons).
     A.image('upgrade_button', 'graphics/ui/merge-grid/upgrade_button.webp');
