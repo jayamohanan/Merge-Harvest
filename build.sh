@@ -24,30 +24,37 @@ OUT=build
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
+# THE COPY IS DONE IN NODE, NOT RSYNC. Cloudflare Pages' build machine has no
+# rsync ("rsync: not found"), and node is needed further down anyway — so one
+# copy that runs the same on a Mac, on GitHub and on Cloudflare.
+#
+# NAMES are left out wherever they appear; ROOT_ONLY only at the project's top
+# level (store/ holds the thumbnails and their reference art).
+#
 # THE ITEM ART SHIPS AS WEBP ONLY. graphics/item also holds the PNG masters and
 # working subfolders; only the top-level .webp files are what the game loads.
-# Anchored with a leading / so it means this one folder. First match wins, so
-# these two must stay ahead of everything else.
-rsync -a \
-  --include '/graphics/item/*.webp' \
-  --exclude '/graphics/item/*' \
-  --exclude '.git' \
-  --exclude '.github' \
-  --exclude '.gitignore' \
-  --exclude '.claude' \
-  --exclude '.DS_Store' \
-  --exclude '._*' \
-  --exclude 'build' \
-  --exclude 'build.sh' \
-  --exclude 'build.command' \
-  --exclude 'dev' \
-  --exclude 'tools' \
-  --exclude 'style' \
-  --exclude '/store' \
-  --exclude '*.md' \
-  --exclude 'sounds' \
-  --exclude 'untitled folder' \
-  ./ "$OUT/"
+node - "$OUT" <<'EOF'
+const fs = require('fs'), path = require('path');
+const OUT = process.argv[2];
+const NAMES = new Set(['.git', '.github', '.gitignore', '.claude', '.DS_Store', 'build', 'build.sh',
+  'build.command', 'dev', 'tools', 'style', 'sounds', 'untitled folder']);
+const ROOT_ONLY = new Set(['store']);
+function skip(rel, name, isDir) {
+  if (NAMES.has(name) || name.startsWith('._') || name.endsWith('.md')) return true;
+  if (!rel.includes('/') && ROOT_ONLY.has(name)) return true;
+  if (path.posix.dirname(rel) === 'graphics/item') return isDir || !name.endsWith('.webp');
+  return false;
+}
+function copy(dir) {
+  for (const e of fs.readdirSync(dir || '.', { withFileTypes: true })) {
+    const rel = dir ? `${dir}/${e.name}` : e.name;
+    if (skip(rel, e.name, e.isDirectory())) continue;
+    if (e.isDirectory()) { fs.mkdirSync(path.join(OUT, rel), { recursive: true }); copy(rel); }
+    else if (e.isFile()) fs.copyFileSync(rel, path.join(OUT, rel));
+  }
+}
+copy('');
+EOF
 
 # ── NO DEBUG OVERLAYS IN THE BUILD ─────────────────────────────────────────────
 # The development viewers — the stump rows, the crop rows and the field maps —
