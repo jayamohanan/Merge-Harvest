@@ -1018,13 +1018,6 @@ class GameScene extends Phaser.Scene {
         this.gamePaused = false;   // frozen only while an ad plays (_setPaused)
         this._buildSplitLine();
 
-        // POKI: gameplayStart ON THE PLAYER'S FIRST INPUT — the first tap or
-        // click anywhere, which is also what dismisses the start tutorial.
-        this.input.once('pointerdown', () => {
-            pokiFirstInput = true;
-            if (!this.gamePaused && !this.isWatchingAd) pokiGameplay(true);
-        });
-
         // Everything the opening view needs is up.
         finishLoadingScreen();
     }
@@ -5439,8 +5432,6 @@ class GameScene extends Phaser.Scene {
     _setPaused(on) {
         if (this.gamePaused === on) return;
         this.gamePaused = on;
-        // Poki's gameplay events are sent by the CALLERS (the ads), in the
-        // order each needs them.
 
         if (on) { this.tweens.pauseAll(); this.anims.pauseAll(); }
         else    { this.tweens.resumeAll(); this.anims.resumeAll(); }
@@ -6596,28 +6587,11 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    // THE LEVEL-UP-ALL REWARD, BEHIND A REWARDED AD. Poki's rewardedBreak:
-    // gameplay stopped and the world frozen for it, and the reward given ONLY
-    // if it reports success — an ad blocker, no fill or a skipped ad give
-    // nothing, which Poki requires. Without the SDK at all: the mock ad on a
-    // local dev server (to test the flow), and no reward anywhere else — an
-    // ad blocker on the live site removes the SDK, and must not be a free
-    // upgrade.
+    // THE LEVEL-UP-ALL REWARD, BEHIND A REWARDED AD. No ad SDK is wired in:
+    // the mock ad on a local dev server (to test the flow), and no reward
+    // anywhere else.
     levelUpAll() {
         if (this.isWatchingAd) return;  // Prevent multiple ad triggers
-        if (pokiReady) {
-            this.isWatchingAd = true;
-            this._setPaused(true);
-            pokiGameplay(false);
-            pokiRewardedBreak().then((ok) => {
-                this.isWatchingAd = false;
-                this._setPaused(false);
-                if (pokiFirstInput) pokiGameplay(true);
-                if (ok) this.performLevelUpAll();
-                else this._adUnavailable();
-            });
-            return;
-        }
         if (isLocalDev()) { this.showMockAd(() => this.performLevelUpAll()); return; }
         this._adUnavailable();
     }
@@ -6640,10 +6614,8 @@ class GameScene extends Phaser.Scene {
     showMockAd(onComplete) {
         this.isWatchingAd = true;  // Block all interactions during ad
         // THE WORLD STOPS FOR THE AD — harvest tick, tweens mid-flight, every
-        // timer — and picks up exactly where it was once the ad is over, the
-        // way Poki requires.
+        // timer — and picks up exactly where it was once the ad is over.
         this._setPaused(true);
-        pokiGameplay(false);
         const W = this.cameras.main.width;
         const H = this.cameras.main.height;
         const A = CONFIG.AD;
@@ -6697,7 +6669,6 @@ class GameScene extends Phaser.Scene {
                 timerText.destroy();
                 this.isWatchingAd = false;  // Re-enable interactions
                 this._setPaused(false);     // the world carries on from where it stopped
-                if (pokiFirstInput) pokiGameplay(true);
                 onComplete();  // Instant upgrade after ad
             }
         }, 1000);
@@ -7185,9 +7156,6 @@ function finishLoadingScreen() {
     loadTimingReport();
     setLoadingProgress(1);
     loadingScreenDone = true;
-    // gameplayStart waits for the player's FIRST INPUT, not the load — Poki's
-    // rule. See the scene's first pointerdown (create) and pokiFirstInput.
-    pokiCall('gameLoadingFinished');
     const screen = typeof document !== 'undefined' && document.getElementById('loading-screen');
     if (!screen) return;
     // A beat at 100% before fading, so the full bar is actually seen — create()
@@ -7196,36 +7164,6 @@ function finishLoadingScreen() {
         screen.classList.add('done');
         setTimeout(() => screen.remove(), 500);
     }, 250);
-}
-
-// ── Poki SDK ─────────────────────────────────────────────────────────────────
-// Every call goes through here, because the SDK is optional at runtime: an ad
-// blocker removes it, and a page served anywhere but Poki may not have it. A
-// missing or throwing SDK must never cost the player the game.
-let pokiReady = false;
-function pokiCall(fn) {
-    if (!pokiReady) return;
-    try { window.PokiSDK[fn](); } catch (e) { console.warn(`[poki] ${fn} failed`, e); }
-}
-// Start/stop are sent only on a real change, so a stray repeat from either
-// side never reaches Poki as a double event.
-let pokiPlaying = false;
-function pokiGameplay(on) {
-    if (pokiPlaying === on) return;
-    pokiPlaying = on;
-    pokiCall(on ? 'gameplayStart' : 'gameplayStop');
-}
-// The player's first input has happened — gameplayStart may be sent. Before
-// it, nothing (not even the end of an ad) may start gameplay.
-let pokiFirstInput = false;
-
-// A REWARDED BREAK. Resolves true only if Poki says the ad was watched.
-function pokiRewardedBreak() {
-    if (!pokiReady) return Promise.resolve(false);
-    try {
-        return Promise.resolve(window.PokiSDK.rewardedBreak(() => {}))
-            .then((ok) => !!ok).catch(() => false);
-    } catch (e) { console.warn('[poki] rewardedBreak failed', e); return Promise.resolve(false); }
 }
 
 // ── The save, as stored ─────────────────────────────────────────────────────
@@ -7289,7 +7227,7 @@ function isLocalDev() {
 }
 
 // THE PARENT PAGE MUST NOT SCROLL under the game — arrow keys, space and the
-// mouse wheel would otherwise scroll Poki's page around it. Poki's rule.
+// mouse wheel would otherwise scroll an embedding page around it.
 if (typeof window !== 'undefined') {
     window.addEventListener('keydown', (ev) => {
         if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', ' '].includes(ev.key)) ev.preventDefault();
@@ -7297,33 +7235,12 @@ if (typeof window !== 'undefined') {
     window.addEventListener('wheel', (ev) => ev.preventDefault(), { passive: false });
 }
 
-// Resolves either way. The timeout is there so a hung init can never hold the
-// game on the loading screen — Poki would rather lose a metric than a player.
-function initPoki() {
-    if (typeof window === 'undefined' || !window.PokiSDK) {
-        console.warn('[poki] SDK not present — running without it');
-        loadMark('Poki SDK not present');
-        return Promise.resolve();
-    }
-    let settled = false;
-    const init = window.PokiSDK.init()
-        .then(() => { pokiReady = true; loadMark('Poki SDK ready'); })
-        .catch((e) => { console.warn('[poki] init failed — running without it', e); loadMark('Poki SDK init FAILED'); })
-        .finally(() => { settled = true; });
-    const cap = new Promise((r) => setTimeout(() => {
-        if (!settled) loadMark('Poki SDK still not ready after 4000ms — TIMED OUT, carrying on');
-        r();
-    }, 4000));
-    return Promise.race([init, cap]);
-}
-
 if (typeof window !== 'undefined' && !window.__LEVEL_VIEWER__) {
-    loadMark('game script running (page, Phaser and Poki SDK scripts are in)');
+    loadMark('game script running (page and Phaser scripts are in)');
     setLoadingProgress(LOAD_BOOT_SHARE * 0.4);
     Promise.all([
         Promise.resolve(initBatteryImagePaths()).then(() => loadMark('battery list ready')),
         waitForFont().then(() => loadMark('font ready')),
-        initPoki(),
     ]).then(() => {
         loadMark('boot checks done — starting Phaser');
         setLoadingProgress(LOAD_BOOT_SHARE);
