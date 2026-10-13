@@ -648,6 +648,12 @@ var CONFIG = {
                                        // and the charge-rate figure under it.
                                        // The font's own top padding adds to
                                        // this on screen
+        // THE DROP ZONE round each slot — bigger than the slot, centred on
+        // it, as far each way as the other. X and Y are shares of the most it
+        // may spread: sideways, to halfway to the next slot (and never past
+        // the farm half), so no two overlap; up and down, to the farm half's
+        // nearer edge. 0 is the slot itself.
+        DROP_ZONE: { X: 1, Y: 1 },
 
         // The rate on each slot. Was black type on a white outline — the one
         // place in the game that ran that way round — which put it at odds with

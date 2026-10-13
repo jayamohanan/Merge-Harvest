@@ -1399,7 +1399,20 @@ class GameScene extends Phaser.Scene {
             // ON A RELAYOUT the record is kept — it is what the charging slot,
             // its battery and its plant are paired through — and only its
             // geometry and furniture are swapped for the new ones.
-            const slot = { index: i, slotX, slotY: slotYi, slotSize: ssz,
+            // THE DROP ZONE (PLATFORM.DROP_ZONE): its half-width and
+            // half-height, the same both ways from the slot's centre. The
+            // slots stand in a ROW, so sideways it reaches halfway to the next
+            // slot; up and down, to the farm half's nearer edge. Never past
+            // the farm half, so it cannot reach the merge grid's cells.
+            const DZ   = P.DROP_ZONE || {};
+            const lerp = (k, a, b) => a + (b - a) * Math.max(0, Math.min(1, k !== undefined ? k : 0));
+            const step = Math.abs(this.farmRows[1].cx - this.farmRows[0].cx);
+            const dropHW = lerp(DZ.X, ssz / 2, Math.max(ssz / 2,
+                Math.min(step / 2, slotX - B.x, B.x + B.width - slotX)));
+            const dropHH = lerp(DZ.Y, ssz / 2, Math.max(ssz / 2,
+                Math.min(slotYi - B.y, B.y + B.height - slotYi)));
+
+            const slot = { index: i, slotX, slotY: slotYi, slotSize: ssz, dropHW, dropHH,
                            slotBg, slotBgFilled, chargeRateText };
             if (this.platforms[i]) Object.assign(this.platforms[i], slot);
             else this.platforms.push(Object.assign(slot, {
@@ -6365,7 +6378,7 @@ class GameScene extends Phaser.Scene {
         for (let i = 0; i < this.platforms.length; i++) {
             const p    = this.platforms[i];
             const half = p.slotSize / 2;
-            if (Math.abs(dx - p.slotX) <= half && Math.abs(dy - p.slotY) <= half) {
+            if (Math.abs(dx - p.slotX) <= (p.dropHW || half) && Math.abs(dy - p.slotY) <= (p.dropHH || half)) {
                 this.handleDropOnPlatformSlot(i, bd);
                 this.draggingBattery = null;
                 return;
